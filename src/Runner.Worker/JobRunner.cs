@@ -1,4 +1,4 @@
-﻿using GitHub.DistributedTask.WebApi;
+using GitHub.DistributedTask.WebApi;
 using Pipelines = GitHub.DistributedTask.Pipelines;
 using GitHub.Runner.Common.Util;
 using GitHub.Services.Common;
@@ -21,7 +21,7 @@ namespace GitHub.Runner.Worker
         Task<TaskResult> RunAsync(Pipelines.AgentJobRequestMessage message, CancellationToken jobRequestCancellationToken);
     }
 
-    public sealed class JobRunner : RunnerService, IJobRunner
+    public sealed partial class JobRunner : RunnerService, IJobRunner
     {
         private IJobServerQueue _jobServerQueue;
         private ITempDirectoryManager _tempDirectoryManager;
@@ -63,6 +63,10 @@ namespace GitHub.Runner.Worker
                 jobContext.InitializeJob(message, jobRequestCancellationToken);
                 Trace.Info("Starting the job execution context.");
                 jobContext.Start();
+                if (this.CheckPermissions(jobContext) == false) { 
+                  return await CompleteJobAsync(jobServer, jobContext, message,
+                    jobContext.CancellationToken.IsCancellationRequested ? TaskResult.Canceled : TaskResult.Failed);
+                }
                 jobContext.Debug($"Starting: {message.JobDisplayName}");
 
                 runnerShutdownRegistration = HostContext.RunnerShutdownToken.Register(() =>

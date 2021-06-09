@@ -1,4 +1,4 @@
-﻿using GitHub.Runner.Common.Util;
+using GitHub.Runner.Common.Util;
 using GitHub.Runner.Sdk;
 using System;
 using System.IO;
@@ -13,7 +13,7 @@ namespace GitHub.Runner.Common
     // Settings are persisted in this structure
     //
     [DataContract]
-    public sealed class RunnerSettings
+    public sealed partial class RunnerSettings
     {
         [DataMember(Name = "IsHostedServer", EmitDefaultValue = false)]
         private bool? _isHostedServer;
