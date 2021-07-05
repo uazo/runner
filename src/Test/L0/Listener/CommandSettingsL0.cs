@@ -34,6 +34,45 @@ namespace GitHub.Runner.Common.Tests
         [Fact]
         [Trait("Level", "L0")]
         [Trait("Category", nameof(CommandSettings))]
+        public void GetSingleAllowedAuthorsList()
+        {
+            using (TestHostContext hc = CreateTestContext())
+            {
+                // Arrange.
+                var command = new CommandSettings(hc, args: new string[] { "--allowedauthorslist", "test1" });
+
+                // Act.
+                var actual = command.GetAllowedAuthorsList();
+
+                // Assert.
+                Assert.Equal(1, actual.Count);
+                Assert.Contains("test1", actual);
+            }
+        }
+
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", nameof(CommandSettings))]
+        public void GetMultipleeAllowedAuthorsList()
+        {
+            using (TestHostContext hc = CreateTestContext())
+            {
+                // Arrange.
+                var command = new CommandSettings(hc, args: new string[] { "--allowedauthorslist", "test1,test2" });
+
+                // Act.
+                var actual = command.GetAllowedAuthorsList();
+
+                // Assert.
+                Assert.Equal(2, actual.Count);
+                Assert.Contains("test1", actual);
+                Assert.Contains("test2", actual);
+            }
+        }
+
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", nameof(CommandSettings))]
         public void GetsNameArgFromEnvVar()
         {
             using (TestHostContext hc = CreateTestContext())

@@ -304,6 +304,13 @@ namespace GitHub.Runner.Listener.Configuration
 
             runnerSettings.MonitorSocketAddress = command.GetMonitorSocketAddress();
 
+            var allowedAuthors = command.GetAllowedAuthorsList();
+            if(allowedAuthors != null) { 
+              runnerSettings.RequestSecuritySettings = new RequestSecuritySettings()
+              {
+                AllowedAuthors = allowedAuthors
+              };
+            }
             _store.SaveSettings(runnerSettings);
 
             _term.WriteLine();

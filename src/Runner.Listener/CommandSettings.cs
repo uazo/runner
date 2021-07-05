@@ -51,7 +51,8 @@ namespace GitHub.Runner.Listener
             Constants.Runner.CommandLine.Args.UserName,
             Constants.Runner.CommandLine.Args.WindowsLogonAccount,
             Constants.Runner.CommandLine.Args.WindowsLogonPassword,
-            Constants.Runner.CommandLine.Args.Work
+            Constants.Runner.CommandLine.Args.Work,
+            Constants.Runner.CommandLine.Args.AllowedAuthorsList
         };
 
         // Commands.
@@ -294,6 +295,13 @@ namespace GitHub.Runner.Listener
             }
 
             return labelSet;
+        }
+        public HashSet<string> GetAllowedAuthorsList()
+        {
+          var args = GetArg(Constants.Runner.CommandLine.Args.AllowedAuthorsList);
+          if (string.IsNullOrEmpty(args)) return null;
+
+          return args.Split(",").ToHashSet();
         }
 
         //
