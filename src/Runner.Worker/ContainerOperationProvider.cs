@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.ServiceProcess;
@@ -208,6 +208,14 @@ namespace GitHub.Runner.Worker
             int pullExitCode = 0;
             while (retryCount < 3)
             {
+                if(container.ContainerEnvironmentVariables.ContainsKey("USELOCALIMAGE")) 
+                {
+                  var result = await _dockerManager.DockerInspect(executionContext, container.ContainerImage, "--type=image --format \"{{.Id}}\"");
+                  if (result.Count != 0 && result[0].StartsWith("sha256:"))
+                  {
+                    break;
+                  }
+                }
                 pullExitCode = await _dockerManager.DockerPull(executionContext, container.ContainerImage, configLocation);
                 if (pullExitCode == 0)
                 {
