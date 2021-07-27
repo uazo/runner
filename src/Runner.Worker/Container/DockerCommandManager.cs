@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -36,11 +36,17 @@ namespace GitHub.Runner.Worker.Container
         Task<int> DockerLogin(IExecutionContext context, string configFileDirectory, string registry, string username, string password);
     }
 
-    public class DockerCommandManager : RunnerService, IDockerCommandManager
+    public partial class DockerCommandManager : RunnerService, IDockerCommandManager
     {
         public string DockerPath { get; private set; }
 
         public string DockerInstanceLabel { get; private set; }
+
+        public void InitializeForTests(IHostContext hostContext)
+        {
+            base.Initialize(hostContext);
+            DockerPath = "fakeDocker";
+        }
 
         public override void Initialize(IHostContext hostContext)
         {
@@ -149,26 +155,7 @@ namespace GitHub.Runner.Worker.Container
                 dockerOptions.Add("-e CI=true");
             }
 
-            foreach (var volume in container.MountVolumes)
-            {
-                // replace `"` with `\"` and add `"{0}"` to all path.
-                String volumeArg;
-                if (String.IsNullOrEmpty(volume.SourceVolumePath))
-                {
-                    // Anonymous docker volume
-                    volumeArg = $"-v \"{volume.TargetVolumePath.Replace("\"", "\\\"")}\"";
-                }
-                else
-                {
-                    // Named Docker volume / host bind mount
-                    volumeArg = $"-v \"{volume.SourceVolumePath.Replace("\"", "\\\"")}\":\"{volume.TargetVolumePath.Replace("\"", "\\\"")}\"";
-                }
-                if (volume.ReadOnly)
-                {
-                    volumeArg += ":ro";
-                }
-                dockerOptions.Add(volumeArg);
-            }
+            ParseMountVolumes(dockerOptions, container);
             if (!string.IsNullOrEmpty(container.ContainerEntryPoint))
             {
                 dockerOptions.Add($"--entrypoint \"{container.ContainerEntryPoint}\"");
@@ -225,26 +212,7 @@ namespace GitHub.Runner.Worker.Container
                 dockerOptions.Add($"--network {container.ContainerNetwork}");
             }
 
-            foreach (var volume in container.MountVolumes)
-            {
-                // replace `"` with `\"` and add `"{0}"` to all path.
-                String volumeArg;
-                if (String.IsNullOrEmpty(volume.SourceVolumePath))
-                {
-                    // Anonymous docker volume
-                    volumeArg = $"-v \"{volume.TargetVolumePath.Replace("\"", "\\\"")}\"";
-                }
-                else
-                {
-                    // Named Docker volume / host bind mount
-                    volumeArg = $"-v \"{volume.SourceVolumePath.Replace("\"", "\\\"")}\":\"{volume.TargetVolumePath.Replace("\"", "\\\"")}\"";
-                }
-                if (volume.ReadOnly)
-                {
-                    volumeArg += ":ro";
-                }
-                dockerOptions.Add(volumeArg);
-            }
+            ParseMountVolumes(dockerOptions, container);
             // IMAGE
             dockerOptions.Add($"{container.ContainerImage}");
 

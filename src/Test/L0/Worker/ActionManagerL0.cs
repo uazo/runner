@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
@@ -293,6 +293,113 @@ namespace GitHub.Runner.Common.Tests.Worker
                 var steps = (await _actionManager.PrepareActionsAsync(_ec.Object, actions)).ContainerSetupSteps;
 
                 Assert.True(steps.Count == 0);
+            }
+            finally
+            {
+                Teardown();
+            }
+        }
+
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", "Worker")]
+        public async void PrepareActions_TestDockerNoSupport()
+        {
+            try
+            {
+                //Arrange
+                Setup(addProcessInvoker: false);
+
+                string docker_mount = "/var/run/docker.sock";
+                string _arguments = docker_mount;
+
+                var _processInvoker = new Mock<IProcessInvoker>();
+                _processInvoker.Setup( x => 
+                  x.ExecuteAsync(/*workingDirectory:*/ It.IsAny<string>(),
+                                 /*fileName:*/ It.IsAny<string>(),
+                                 /*arguments:*/ It.IsAny<string>(),
+                                 /*environment:*/ It.IsAny<IDictionary<string,string>>(),
+                                 /*requireExitCodeZero:*/ It.IsAny<bool>(),
+                                 /*outputEncoding:*/ It.IsAny<System.Text.Encoding>(),
+                                 /*cancellationToken:*/ It.IsAny<CancellationToken>()))
+                    .Returns(
+                        (string workingDirectory,
+                        string fileName,
+                        string arguments,
+                        IDictionary<string, string> environment,
+                        bool requireExitCodeZero,
+                        System.Text.Encoding outputEncoding,
+                        CancellationToken cancellationToken) =>
+                        {
+                          _arguments = arguments;
+                          return Task.FromResult(0);
+                        });
+                _hc.EnqueueInstance<IProcessInvoker>(_processInvoker.Object);
+
+                var dockerManager = new DockerCommandManager();
+                dockerManager.InitializeForTests(_hc);
+
+                var cInfo = new ContainerInfo();
+                cInfo.ContainerEnvironmentVariables.Add("REMOVEDOCKERSUPPORT", "true");
+                cInfo.MountVolumes.Add(new MountVolume(docker_mount, docker_mount));
+
+                //Act
+                var result = await dockerManager.DockerCreate(_ec.Object, cInfo);
+
+                Assert.DoesNotContain("docker.sock", _arguments);
+            }
+            finally
+            {
+                Teardown();
+            }
+        }
+
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", "Worker")]
+        public async void PrepareActions_TestDockerStandardSupport()
+        {
+            try
+            {
+                //Arrange
+                Setup(addProcessInvoker: false);
+
+                string docker_mount = "/var/run/docker.sock";
+                string _arguments = "";
+
+                var _processInvoker = new Mock<IProcessInvoker>();
+                _processInvoker.Setup( x => 
+                  x.ExecuteAsync(/*workingDirectory:*/ It.IsAny<string>(),
+                                 /*fileName:*/ It.IsAny<string>(),
+                                 /*arguments:*/ It.IsAny<string>(),
+                                 /*environment:*/ It.IsAny<IDictionary<string,string>>(),
+                                 /*requireExitCodeZero:*/ It.IsAny<bool>(),
+                                 /*outputEncoding:*/ It.IsAny<System.Text.Encoding>(),
+                                 /*cancellationToken:*/ It.IsAny<CancellationToken>()))
+                    .Returns(
+                        (string workingDirectory,
+                        string fileName,
+                        string arguments,
+                        IDictionary<string, string> environment,
+                        bool requireExitCodeZero,
+                        System.Text.Encoding outputEncoding,
+                        CancellationToken cancellationToken) =>
+                        {
+                          _arguments = arguments;
+                          return Task.FromResult(0);
+                        });
+                _hc.EnqueueInstance<IProcessInvoker>(_processInvoker.Object);
+
+                var dockerManager = new DockerCommandManager();
+                dockerManager.InitializeForTests(_hc);
+
+                var cInfo = new ContainerInfo();
+                cInfo.MountVolumes.Add(new MountVolume(docker_mount, docker_mount));
+
+                //Act
+                var result = await dockerManager.DockerCreate(_ec.Object, cInfo);
+
+                Assert.Contains("docker.sock", _arguments);
             }
             finally
             {
@@ -2051,7 +2158,7 @@ runs:
 #endif
         }
 
-        private void Setup([CallerMemberName] string name = "", bool enableComposite = true)
+        private void Setup([CallerMemberName] string name = "", bool enableComposite = true, bool addProcessInvoker = true)
         {
             _ecTokenSource?.Dispose();
             _ecTokenSource = new CancellationTokenSource();
@@ -2126,21 +2233,24 @@ runs:
                     });
             _hc.SetSingleton<IConfigurationStore>(_configurationStore.Object);
 
-            var pInvoker1 = new ProcessInvokerWrapper();
-            pInvoker1.Initialize(_hc);
-            var pInvoker2 = new ProcessInvokerWrapper();
-            pInvoker2.Initialize(_hc);
-            var pInvoker3 = new ProcessInvokerWrapper();
-            pInvoker3.Initialize(_hc);
-            var pInvoker4 = new ProcessInvokerWrapper();
-            pInvoker4.Initialize(_hc);
-            var pInvoker5 = new ProcessInvokerWrapper();
-            pInvoker5.Initialize(_hc);
-            _hc.EnqueueInstance<IProcessInvoker>(pInvoker1);
-            _hc.EnqueueInstance<IProcessInvoker>(pInvoker2);
-            _hc.EnqueueInstance<IProcessInvoker>(pInvoker3);
-            _hc.EnqueueInstance<IProcessInvoker>(pInvoker4);
-            _hc.EnqueueInstance<IProcessInvoker>(pInvoker5);
+            if(addProcessInvoker == true) 
+            { 
+                var pInvoker1 = new ProcessInvokerWrapper();
+                pInvoker1.Initialize(_hc);
+                var pInvoker2 = new ProcessInvokerWrapper();
+                pInvoker2.Initialize(_hc);
+                var pInvoker3 = new ProcessInvokerWrapper();
+                pInvoker3.Initialize(_hc);
+                var pInvoker4 = new ProcessInvokerWrapper();
+                pInvoker4.Initialize(_hc);
+                var pInvoker5 = new ProcessInvokerWrapper();
+                pInvoker5.Initialize(_hc);
+                _hc.EnqueueInstance<IProcessInvoker>(pInvoker1);
+                _hc.EnqueueInstance<IProcessInvoker>(pInvoker2);
+                _hc.EnqueueInstance<IProcessInvoker>(pInvoker3);
+                _hc.EnqueueInstance<IProcessInvoker>(pInvoker4);
+                _hc.EnqueueInstance<IProcessInvoker>(pInvoker5);
+            }
 
             // Instance to test.
             _actionManager = new ActionManager();
