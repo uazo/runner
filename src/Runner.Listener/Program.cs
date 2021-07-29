@@ -82,7 +82,7 @@ namespace GitHub.Runner.Listener
                 }
                 catch (Exception e)
                 {
-                    terminal.WriteError($"An error occurred: {e.Message}");
+                    terminal.WriteError($"An error occurred: {e.Message} {e.StackTrace}");
                     trace.Error(e);
                     return Constants.Runner.ReturnCode.TerminatedError;
                 }
@@ -113,7 +113,7 @@ namespace GitHub.Runner.Listener
                 }
                 catch (NonRetryableException e)
                 {
-                    terminal.WriteError($"An error occurred: {e.Message}");
+                    terminal.WriteError($"An error occurred: {e.Message} {e.StackTrace}");
                     trace.Error(e);
                     return Constants.Runner.ReturnCode.TerminatedError;
                 }
@@ -121,7 +121,7 @@ namespace GitHub.Runner.Listener
             }
             catch (Exception e)
             {
-                terminal.WriteError($"An error occurred: {e.Message}");
+                terminal.WriteError($"An error occurred: {e.Message} {e.StackTrace}");
                 trace.Error(e);
                 return Constants.Runner.ReturnCode.RetryableError;
             }
