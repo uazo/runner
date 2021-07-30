@@ -132,11 +132,18 @@ namespace GitHub.Runner.Worker
             }
             executionContext.Output("##[endgroup]");
 
+            // Check if a container need internal network
+            bool useInternalNetwork = false;
+            foreach (var container in containers)
+            {
+              useInternalNetwork |= container.ContainerEnvironmentVariables.ContainsKey("USEINTERNALNETWORK");
+            }
+
             // Create local docker network for this job to avoid port conflict when multiple runners run on same machine.
             // All containers within a job join the same network
             executionContext.Output("##[group]Create local container network");
             var containerNetwork = $"github_network_{Guid.NewGuid().ToString("N")}";
-            await CreateContainerNetworkAsync(executionContext, containerNetwork);
+            await CreateContainerNetworkAsync(executionContext, containerNetwork, useInternalNetwork);
             executionContext.JobContext.Container["network"] = new StringContextData(containerNetwork);
             executionContext.Output("##[endgroup]");
 
@@ -403,11 +410,13 @@ namespace GitHub.Runner.Worker
         }
 #endif
 
-        private async Task CreateContainerNetworkAsync(IExecutionContext executionContext, string network)
+        private async Task CreateContainerNetworkAsync(IExecutionContext executionContext, string network,
+          bool useInternalNetwork)
         {
             Trace.Entering();
             ArgUtil.NotNull(executionContext, nameof(executionContext));
-            int networkExitCode = await _dockerManager.DockerNetworkCreate(executionContext, network);
+            int networkExitCode = await _dockerManager.DockerNetworkCreate(executionContext, network,
+              useInternalNetwork);
             if (networkExitCode != 0)
             {
                 throw new InvalidOperationException($"Docker network create failed with exit code {networkExitCode}");

@@ -26,7 +26,7 @@ namespace GitHub.Runner.Worker.Container
         Task<int> DockerLogs(IExecutionContext context, string containerId);
         Task<List<string>> DockerPS(IExecutionContext context, string options);
         Task<int> DockerRemove(IExecutionContext context, string containerId);
-        Task<int> DockerNetworkCreate(IExecutionContext context, string network);
+        Task<int> DockerNetworkCreate(IExecutionContext context, string network, bool useInternalNetwork);
         Task<int> DockerNetworkRemove(IExecutionContext context, string network);
         Task<int> DockerNetworkPrune(IExecutionContext context);
         Task<int> DockerExec(IExecutionContext context, string containerId, string options, string command);
@@ -250,12 +250,13 @@ namespace GitHub.Runner.Worker.Container
                requireExitCodeZero: true);
         }
 
-        public async Task<int> DockerNetworkCreate(IExecutionContext context, string network)
+        public async Task<int> DockerNetworkCreate(IExecutionContext context, string network, bool useInternalNetwork)
         {
+            var internalNetwork = useInternalNetwork ? " --internal" : null;
 #if OS_WINDOWS
-            return await ExecuteDockerCommandAsync(context, "network", $"create --label {DockerInstanceLabel} {network} --driver nat", context.CancellationToken);
+            return await ExecuteDockerCommandAsync(context, "network", $"create --label {DockerInstanceLabel} {network} --driver nat {internalNetwork}", context.CancellationToken);
 #else
-            return await ExecuteDockerCommandAsync(context, "network", $"create --label {DockerInstanceLabel} {network}", context.CancellationToken);
+            return await ExecuteDockerCommandAsync(context, "network", $"create --label {DockerInstanceLabel} {network} {internalNetwork}", context.CancellationToken);
 #endif
         }
 
