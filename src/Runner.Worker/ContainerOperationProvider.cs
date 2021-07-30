@@ -210,7 +210,9 @@ namespace GitHub.Runner.Worker
             {
                 if(container.ContainerEnvironmentVariables.ContainsKey("USELOCALIMAGE")) 
                 {
-                  var result = await _dockerManager.DockerInspect(executionContext, container.ContainerImage, "--type=image --format \"{{.Id}}\"");
+                  var result = await _dockerManager.DockerInspect(executionContext, 
+                    container.ContainerImage, "--type=image --format \"{{.Id}}\"",
+                    requireExitCodeZero: false);
                   if (result.Count != 0 && result[0].StartsWith("sha256:"))
                   {
                     break;
@@ -327,7 +329,8 @@ namespace GitHub.Runner.Worker
             else
             {
                 var configEnvFormat = "--format \"{{range .Config.Env}}{{println .}}{{end}}\"";
-                var containerEnv = await _dockerManager.DockerInspect(executionContext, container.ContainerId, configEnvFormat);
+                var containerEnv = await _dockerManager.DockerInspect(executionContext, container.ContainerId, configEnvFormat,
+                  requireExitCodeZero: true);
                 container.ContainerRuntimePath = DockerUtil.ParsePathFromConfigEnv(containerEnv);
                 executionContext.JobContext.Container["id"] = new StringContextData(container.ContainerId);
             }
@@ -429,7 +432,8 @@ namespace GitHub.Runner.Worker
         private async Task ContainerHealthcheck(IExecutionContext executionContext, ContainerInfo container)
         {
             string healthCheck = "--format=\"{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}\"";
-            string serviceHealth = (await _dockerManager.DockerInspect(context: executionContext, dockerObject: container.ContainerId, options: healthCheck)).FirstOrDefault();
+            string serviceHealth = (await _dockerManager.DockerInspect(context: executionContext, dockerObject: container.ContainerId, options: healthCheck,
+              requireExitCodeZero: true)).FirstOrDefault();
             if (string.IsNullOrEmpty(serviceHealth))
             {
                 // Container has no HEALTHCHECK
@@ -441,7 +445,8 @@ namespace GitHub.Runner.Worker
                 TimeSpan backoff = BackoffTimerHelper.GetExponentialBackoff(retryCount, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(32), TimeSpan.FromSeconds(2));
                 executionContext.Output($"{container.ContainerNetworkAlias} service is starting, waiting {backoff.Seconds} seconds before checking again.");
                 await Task.Delay(backoff, executionContext.CancellationToken);
-                serviceHealth = (await _dockerManager.DockerInspect(context: executionContext, dockerObject: container.ContainerId, options: healthCheck)).FirstOrDefault();
+                serviceHealth = (await _dockerManager.DockerInspect(context: executionContext, dockerObject: container.ContainerId, options: healthCheck,
+                  requireExitCodeZero: true)).FirstOrDefault();
                 retryCount++;
             }
             if (string.Equals(serviceHealth, "healthy", StringComparison.OrdinalIgnoreCase))

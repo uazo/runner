@@ -31,7 +31,7 @@ namespace GitHub.Runner.Worker.Container
         Task<int> DockerNetworkPrune(IExecutionContext context);
         Task<int> DockerExec(IExecutionContext context, string containerId, string options, string command);
         Task<int> DockerExec(IExecutionContext context, string containerId, string options, string command, List<string> outputs);
-        Task<List<string>> DockerInspect(IExecutionContext context, string dockerObject, string options);
+        Task<List<string>> DockerInspect(IExecutionContext context, string dockerObject, string options, bool requireExitCodeZero);
         Task<List<PortMapping>> DockerPort(IExecutionContext context, string containerId);
         Task<int> DockerLogin(IExecutionContext context, string configFileDirectory, string registry, string username, string password);
     }
@@ -57,11 +57,13 @@ namespace GitHub.Runner.Worker.Container
 
         public async Task<DockerVersion> DockerVersion(IExecutionContext context)
         {
-            string serverVersionStr = (await ExecuteDockerCommandAsync(context, "version", "--format '{{.Server.APIVersion}}'")).FirstOrDefault();
+            string serverVersionStr = (await ExecuteDockerCommandAsync(context, "version", "--format '{{.Server.APIVersion}}'", 
+              requireExitCodeZero: true)).FirstOrDefault();
             ArgUtil.NotNullOrEmpty(serverVersionStr, "Docker.Server.Version");
             context.Output($"Docker daemon API version: {serverVersionStr}");
 
-            string clientVersionStr = (await ExecuteDockerCommandAsync(context, "version", "--format '{{.Client.APIVersion}}'")).FirstOrDefault();
+            string clientVersionStr = (await ExecuteDockerCommandAsync(context, "version", "--format '{{.Client.APIVersion}}'",
+              requireExitCodeZero: true)).FirstOrDefault();
             ArgUtil.NotNullOrEmpty(serverVersionStr, "Docker.Client.Version");
             context.Output($"Docker client API version: {clientVersionStr}");
 
@@ -170,7 +172,8 @@ namespace GitHub.Runner.Worker.Container
             dockerOptions.Add($"{container.ContainerEntryPointArgs}");
 
             var optionsString = string.Join(" ", dockerOptions);
-            List<string> outputStrings = await ExecuteDockerCommandAsync(context, "create", optionsString);
+            List<string> outputStrings = await ExecuteDockerCommandAsync(context, "create", optionsString,
+              requireExitCodeZero: true);
 
             return outputStrings.FirstOrDefault();
         }
@@ -243,7 +246,8 @@ namespace GitHub.Runner.Worker.Container
 
         public async Task<List<string>> DockerPS(IExecutionContext context, string options)
         {
-            return await ExecuteDockerCommandAsync(context, "ps", options);
+            return await ExecuteDockerCommandAsync(context, "ps", options,
+               requireExitCodeZero: true);
         }
 
         public async Task<int> DockerNetworkCreate(IExecutionContext context, string network)
@@ -315,14 +319,17 @@ namespace GitHub.Runner.Worker.Container
                             cancellationToken: CancellationToken.None);
         }
 
-        public async Task<List<string>> DockerInspect(IExecutionContext context, string dockerObject, string options)
+        public async Task<List<string>> DockerInspect(IExecutionContext context, string dockerObject, string options,
+          bool requireExitCodeZero)
         {
-            return await ExecuteDockerCommandAsync(context, "inspect", $"{options} {dockerObject}");
+            return await ExecuteDockerCommandAsync(context, "inspect", $"{options} {dockerObject}",
+              requireExitCodeZero: requireExitCodeZero);
         }
 
         public async Task<List<PortMapping>> DockerPort(IExecutionContext context, string containerId)
         {
-            List<string> portMappingLines = await ExecuteDockerCommandAsync(context, "port", containerId);
+            List<string> portMappingLines = await ExecuteDockerCommandAsync(context, "port", containerId,
+              requireExitCodeZero: true);
             return DockerUtil.ParseDockerPort(portMappingLines);
         }
 
@@ -410,7 +417,8 @@ namespace GitHub.Runner.Worker.Container
                 cancellationToken: cancellationToken);
         }
 
-        private async Task<List<string>> ExecuteDockerCommandAsync(IExecutionContext context, string command, string options)
+        private async Task<List<string>> ExecuteDockerCommandAsync(IExecutionContext context, string command, string options,
+          bool requireExitCodeZero /* default true */)
         {
             string arg = $"{command} {options}".Trim();
             context.Command($"{DockerPath} {arg}");
@@ -439,7 +447,7 @@ namespace GitHub.Runner.Worker.Container
                             fileName: DockerPath,
                             arguments: arg,
                             environment: null,
-                            requireExitCodeZero: true,
+                            requireExitCodeZero: requireExitCodeZero,
                             outputEncoding: null,
                             cancellationToken: CancellationToken.None);
 
