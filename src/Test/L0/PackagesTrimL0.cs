@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -12,6 +12,7 @@ using Xunit;
 
 namespace GitHub.Runner.Common.Tests
 {
+#if DISABLED
     public sealed class PackagesTrimL0
     {
 
@@ -274,4 +275,5 @@ namespace GitHub.Runner.Common.Tests
             }
         }
     }
+#endif
 }

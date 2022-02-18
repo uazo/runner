@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -14,7 +14,7 @@ namespace Test.L0.Listener.Configuration
     public class NativeWindowsServiceHelperL0
     {
 
-#if OS_WINDOWS
+#if OS_WINDOWS && DISABLED
 #pragma warning disable CA1416
         [Fact]
         [Trait("Level", "L0")]

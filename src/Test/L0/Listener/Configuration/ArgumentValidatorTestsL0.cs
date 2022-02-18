@@ -1,4 +1,4 @@
-﻿using GitHub.Runner.Listener.Configuration;
+using GitHub.Runner.Listener.Configuration;
 using Xunit;
 
 namespace GitHub.Runner.Common.Tests.Listener.Configuration
@@ -43,7 +43,7 @@ namespace GitHub.Runner.Common.Tests.Listener.Configuration
         }
 
 
-#if OS_WINDOWS
+#if OS_WINDOWS && DISABLED
         [Fact]
         [Trait("Level", "L0")]
         [Trait("Category", "ArgumentValidator")]
