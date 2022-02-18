@@ -1,12 +1,12 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using GitHub.DistributedTask.WebApi;
 using GitHub.Runner.Common;
 using GitHub.Runner.Sdk;
-using GitHub.DistributedTask.WebApi;
 using Pipelines = GitHub.DistributedTask.Pipelines;
-using System;
-using System.Linq;
 
 namespace GitHub.Runner.Worker.Handlers
 {
@@ -53,6 +53,11 @@ namespace GitHub.Runner.Worker.Handlers
             {
                 Environment["ACTIONS_CACHE_URL"] = cacheUrl;
             }
+            if (systemConnection.Data.TryGetValue("GenerateIdTokenUrl", out var generateIdTokenUrl) && !string.IsNullOrEmpty(generateIdTokenUrl))
+            {
+                Environment["ACTIONS_ID_TOKEN_REQUEST_URL"] = generateIdTokenUrl;
+                Environment["ACTIONS_ID_TOKEN_REQUEST_TOKEN"] = systemConnection.Authorization.Parameters[EndpointAuthorizationParameters.AccessToken];
+            }
 
             // Resolve the target script.
             string target = null;
@@ -69,6 +74,14 @@ namespace GitHub.Runner.Worker.Handlers
                 target = Data.Post;
             }
 
+            // Set extra telemetry base on the current context.
+            if (stage == ActionRunStage.Main)
+            {
+                ExecutionContext.StepTelemetry.HasPreStep = Data.HasPre;
+                ExecutionContext.StepTelemetry.HasPostStep = Data.HasPost;
+            }
+            ExecutionContext.StepTelemetry.Type = Data.NodeVersion;
+
             ArgUtil.NotNullOrEmpty(target, nameof(target));
             target = Path.Combine(ActionDirectory, target);
             ArgUtil.File(target, nameof(target));
@@ -80,7 +93,7 @@ namespace GitHub.Runner.Worker.Handlers
                 workingDirectory = HostContext.GetDirectory(WellKnownDirectory.Work);
             }
 
-            var nodeRuntimeVersion = await StepHost.DetermineNodeRuntimeVersion(ExecutionContext);
+            var nodeRuntimeVersion = await StepHost.DetermineNodeRuntimeVersion(ExecutionContext, Data.NodeVersion);
             string file = Path.Combine(HostContext.GetDirectory(WellKnownDirectory.Externals), nodeRuntimeVersion, "bin", $"node{IOUtil.ExeExtension}");
 
             // Format the arguments passed to node.

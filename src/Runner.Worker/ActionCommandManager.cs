@@ -1,7 +1,5 @@
-﻿using GitHub.DistributedTask.Pipelines;
-using GitHub.DistributedTask.Pipelines.ContextData;
+﻿using GitHub.DistributedTask.Pipelines.ContextData;
 using GitHub.DistributedTask.WebApi;
-using GitHub.Runner.Common.Util;
 using GitHub.Runner.Worker.Container;
 using System;
 using System.Collections.Generic;
@@ -110,11 +108,18 @@ namespace GitHub.Runner.Worker
                     // Stop command
                     if (string.Equals(actionCommand.Command, _stopCommand, StringComparison.OrdinalIgnoreCase))
                     {
-                        context.Output(input);
-                        context.Debug("Paused processing commands until '##[{actionCommand.Data}]' is received");
+                        ValidateStopToken(context, actionCommand.Data);
+
                         _stopToken = actionCommand.Data;
                         _stopProcessCommand = true;
                         _registeredCommands.Add(_stopToken);
+                        if (_stopToken.Length > 6)
+                        {
+                            HostContext.SecretMasker.AddValue(_stopToken);
+                        }
+
+                        context.Output(input);
+                        context.Debug("Paused processing commands until the token you called ::stopCommands:: with is received");
                         return true;
                     }
                     // Found command
@@ -148,7 +153,42 @@ namespace GitHub.Runner.Worker
             return true;
         }
 
-        internal static bool EnhancedAnnotationsEnabled(IExecutionContext context) {
+        private void ValidateStopToken(IExecutionContext context, string stopToken)
+        {
+#if OS_WINDOWS
+            var envContext = context.ExpressionValues["env"] as DictionaryContextData;
+#else
+            var envContext = context.ExpressionValues["env"] as CaseSensitiveDictionaryContextData;
+#endif
+            var allowUnsecureStopCommandTokens = false;
+            allowUnsecureStopCommandTokens = StringUtil.ConvertToBoolean(Environment.GetEnvironmentVariable(Constants.Variables.Actions.AllowUnsupportedStopCommandTokens));
+            if (!allowUnsecureStopCommandTokens && envContext.ContainsKey(Constants.Variables.Actions.AllowUnsupportedStopCommandTokens))
+            {
+                allowUnsecureStopCommandTokens = StringUtil.ConvertToBoolean(envContext[Constants.Variables.Actions.AllowUnsupportedStopCommandTokens].ToString());
+            }
+
+            bool isTokenInvalid = _registeredCommands.Contains(stopToken)
+                || string.IsNullOrEmpty(stopToken)
+                || string.Equals(stopToken, "pause-logging", StringComparison.OrdinalIgnoreCase);
+
+            if (isTokenInvalid)
+            {
+                var telemetry = new JobTelemetry
+                {
+                    Message = $"Invoked ::stopCommand:: with token: [{stopToken}]",
+                    Type = JobTelemetryType.ActionCommand
+                };
+                context.Global.JobTelemetry.Add(telemetry);
+            }
+
+            if (isTokenInvalid && !allowUnsecureStopCommandTokens)
+            {
+                throw new Exception(Constants.Runner.UnsupportedStopCommandTokenDisabled);
+            }
+        }
+
+        internal static bool EnhancedAnnotationsEnabled(IExecutionContext context)
+        {
             return context.Global.Variables.GetBoolean("DistributedTask.EnhancedAnnotations") ?? false;
         }
     }
@@ -252,7 +292,7 @@ namespace GitHub.Runner.Worker
             public const String Name = "name";
         }
 
-        private string[] _setEnvBlockList = 
+        private string[] _setEnvBlockList =
         {
             "NODE_OPTIONS"
         };
@@ -295,8 +335,21 @@ namespace GitHub.Runner.Worker
             {
                 throw new Exception("Required field 'name' is missing in ##[save-state] command.");
             }
-
-            context.IntraActionState[stateName] = command.Data;
+            // Embedded steps (composite) keep track of the state at the root level
+            if (context.IsEmbedded)
+            {
+                var id = context.EmbeddedId;
+                if (!context.Root.EmbeddedIntraActionState.ContainsKey(id))
+                {
+                    context.Root.EmbeddedIntraActionState[id] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                }
+                context.Root.EmbeddedIntraActionState[id][stateName] = command.Data;
+            }
+            // Otherwise modify the ExecutionContext
+            else
+            {
+                context.IntraActionState[stateName] = command.Data;
+            }
             context.Debug($"Save intra-action state {stateName} = {command.Data}");
         }
 
@@ -328,6 +381,13 @@ namespace GitHub.Runner.Worker
 
                 HostContext.SecretMasker.AddValue(command.Data);
                 Trace.Info($"Add new secret mask with length of {command.Data.Length}");
+
+                // Also add each individual line. Typically individual lines are processed from STDOUT of child processes.
+                var split = command.Data.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                foreach (var item in split)
+                {
+                    HostContext.SecretMasker.AddValue(item);
+                }
             }
         }
     }
@@ -340,7 +400,7 @@ namespace GitHub.Runner.Worker
         public Type ExtensionType => typeof(IActionCommandExtension);
 
         public void ProcessCommand(IExecutionContext context, string line, ActionCommand command, ContainerInfo container)
-        {          
+        {
             var allowUnsecureCommands = false;
             bool.TryParse(Environment.GetEnvironmentVariable(Constants.Variables.Actions.AllowUnsupportedCommands), out allowUnsecureCommands);
 
@@ -529,11 +589,11 @@ namespace GitHub.Runner.Worker
             command.Properties.TryGetValue(IssueCommandProperties.Line, out string line);
             command.Properties.TryGetValue(IssueCommandProperties.Column, out string column);
 
-            if (!ActionCommandManager.EnhancedAnnotationsEnabled(context)) 
+            if (!ActionCommandManager.EnhancedAnnotationsEnabled(context))
             {
                 context.Debug("Enhanced Annotations not enabled on the server. The 'title', 'end_line', and 'end_column' fields are unsupported.");
             }
-            
+
             Issue issue = new Issue()
             {
                 Category = "General",
@@ -585,7 +645,7 @@ namespace GitHub.Runner.Worker
             context.AddIssue(issue);
         }
 
-        public static void ValidateLinesAndColumns(ActionCommand command, IExecutionContext context) 
+        public static void ValidateLinesAndColumns(ActionCommand command, IExecutionContext context)
         {
             command.Properties.TryGetValue(IssueCommandProperties.Line, out string line);
             command.Properties.TryGetValue(IssueCommandProperties.EndLine, out string endLine);
@@ -614,28 +674,28 @@ namespace GitHub.Runner.Worker
                 column = endColumn;
             }
 
-            if (!hasStartLine && hasColumn) 
+            if (!hasStartLine && hasColumn)
             {
                 context.Debug($"Invalid {command.Command} command value. '{IssueCommandProperties.Column}' and '{IssueCommandProperties.EndColumn}' can only be set if '{IssueCommandProperties.Line}' value is provided.");
                 command.Properties.Remove(IssueCommandProperties.Column);
                 command.Properties.Remove(IssueCommandProperties.EndColumn);
             }
 
-            if (hasEndLine && line != endLine && hasColumn) 
+            if (hasEndLine && line != endLine && hasColumn)
             {
                 context.Debug($"Invalid {command.Command} command value. '{IssueCommandProperties.Column}' and '{IssueCommandProperties.EndColumn}' cannot be set if '{IssueCommandProperties.Line}' and '{IssueCommandProperties.EndLine}' are different values.");
                 command.Properties.Remove(IssueCommandProperties.Column);
                 command.Properties.Remove(IssueCommandProperties.EndColumn);
             }
 
-            if (hasStartLine && hasEndLine && endLineNumber < lineNumber) 
+            if (hasStartLine && hasEndLine && endLineNumber < lineNumber)
             {
                 context.Debug($"Invalid {command.Command} command value. '{IssueCommandProperties.EndLine}' cannot be less than '{IssueCommandProperties.Line}'.");
                 command.Properties.Remove(IssueCommandProperties.Line);
                 command.Properties.Remove(IssueCommandProperties.EndLine);
             }
 
-            if (hasStartColumn && hasEndColumn && endColumnNumber < columnNumber) 
+            if (hasStartColumn && hasEndColumn && endColumnNumber < columnNumber)
             {
                 context.Debug($"Invalid {command.Command} command value. '{IssueCommandProperties.EndColumn}' cannot be less than '{IssueCommandProperties.Column}'.");
                 command.Properties.Remove(IssueCommandProperties.Column);

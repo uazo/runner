@@ -55,7 +55,9 @@ namespace GitHub.Runner.Worker
             ArgUtil.NotNull(message, nameof(message));
 
             // Create a new timeline record for 'Set up job'
-            IExecutionContext context = jobContext.CreateChild(Guid.NewGuid(), "Set up job", $"{nameof(JobExtension)}_Init", null, null);
+            IExecutionContext context = jobContext.CreateChild(Guid.NewGuid(), "Set up job", $"{nameof(JobExtension)}_Init", null, null, ActionRunStage.Pre);
+            context.StepTelemetry.Type = "runner";
+            context.StepTelemetry.Action = "setup_job";
 
             List<IStep> preJobSteps = new List<IStep>();
             List<IStep> jobSteps = new List<IStep>();
@@ -122,24 +124,30 @@ namespace GitHub.Runner.Worker
                         }
                     }
 
-                    try 
+                    try
                     {
                         var tokenPermissions = jobContext.Global.Variables.Get("system.github.token.permissions") ?? "";
                         if (!string.IsNullOrEmpty(tokenPermissions))
                         {
                             context.Output($"##[group]GITHUB_TOKEN Permissions");
                             var permissions = StringUtil.ConvertFromJson<Dictionary<string, string>>(tokenPermissions);
-                            foreach(KeyValuePair<string, string> entry in permissions)
+                            foreach (KeyValuePair<string, string> entry in permissions)
                             {
                                 context.Output($"{entry.Key}: {entry.Value}");
                             }
                             context.Output("##[endgroup]");
                         }
-                    } 
+                    }
                     catch (Exception ex)
                     {
                         context.Output($"Fail to parse and display GITHUB_TOKEN permissions list: {ex.Message}");
                         Trace.Error(ex);
+                    }
+
+                    var secretSource = context.GetGitHubContext("secret_source");
+                    if (!string.IsNullOrEmpty(secretSource))
+                    {
+                        context.Output($"Secret source: {secretSource}");
                     }
 
                     var repoFullName = context.GetGitHubContext("repository");
@@ -306,13 +314,15 @@ namespace GitHub.Runner.Worker
                             JobExtensionRunner extensionStep = step as JobExtensionRunner;
                             ArgUtil.NotNull(extensionStep, extensionStep.DisplayName);
                             Guid stepId = Guid.NewGuid();
-                            extensionStep.ExecutionContext = jobContext.CreateChild(stepId, extensionStep.DisplayName, null, null, stepId.ToString("N"));
+                            extensionStep.ExecutionContext = jobContext.CreateChild(stepId, extensionStep.DisplayName, stepId.ToString("N"), null, stepId.ToString("N"), ActionRunStage.Pre);
+                            extensionStep.ExecutionContext.StepTelemetry.Type = "runner";
+                            extensionStep.ExecutionContext.StepTelemetry.Action = extensionStep.DisplayName.ToLowerInvariant().Replace(' ', '_');
                         }
                         else if (step is IActionRunner actionStep)
                         {
                             ArgUtil.NotNull(actionStep, step.DisplayName);
                             Guid stepId = Guid.NewGuid();
-                            actionStep.ExecutionContext = jobContext.CreateChild(stepId, actionStep.DisplayName, stepId.ToString("N"), null, null, intraActionStates[actionStep.Action.Id]);
+                            actionStep.ExecutionContext = jobContext.CreateChild(stepId, actionStep.DisplayName, stepId.ToString("N"), null, null, ActionRunStage.Pre, intraActionStates[actionStep.Action.Id]);
                         }
                     }
 
@@ -323,7 +333,7 @@ namespace GitHub.Runner.Worker
                         {
                             ArgUtil.NotNull(actionStep, step.DisplayName);
                             intraActionStates.TryGetValue(actionStep.Action.Id, out var intraActionState);
-                            actionStep.ExecutionContext = jobContext.CreateChild(actionStep.Action.Id, actionStep.DisplayName, actionStep.Action.Name, null, actionStep.Action.ContextName, intraActionState);
+                            actionStep.ExecutionContext = jobContext.CreateChild(actionStep.Action.Id, actionStep.DisplayName, actionStep.Action.Name, null, actionStep.Action.ContextName, ActionRunStage.Main, intraActionState);
                         }
                     }
 
@@ -394,7 +404,9 @@ namespace GitHub.Runner.Worker
             ArgUtil.NotNull(jobContext, nameof(jobContext));
 
             // create a new timeline record node for 'Finalize job'
-            IExecutionContext context = jobContext.CreateChild(Guid.NewGuid(), "Complete job", $"{nameof(JobExtension)}_Final", null, null);
+            IExecutionContext context = jobContext.CreateChild(Guid.NewGuid(), "Complete job", $"{nameof(JobExtension)}_Final", null, null, ActionRunStage.Post);
+            context.StepTelemetry.Type = "runner";
+            context.StepTelemetry.Action = "complete_joh";
             using (var register = jobContext.CancellationToken.Register(() => { context.CancelToken(); }))
             {
                 try

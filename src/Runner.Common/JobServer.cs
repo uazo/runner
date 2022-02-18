@@ -1,9 +1,12 @@
-﻿using GitHub.DistributedTask.WebApi;
+using GitHub.DistributedTask.WebApi;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using GitHub.Runner.Sdk;
+using GitHub.Services.Common;
 using GitHub.Services.WebApi;
 
 namespace GitHub.Runner.Common
@@ -23,7 +26,7 @@ namespace GitHub.Runner.Common
         Task<List<TimelineRecord>> UpdateTimelineRecordsAsync(Guid scopeIdentifier, string hubName, Guid planId, Guid timelineId, IEnumerable<TimelineRecord> records, CancellationToken cancellationToken);
         Task RaisePlanEventAsync<T>(Guid scopeIdentifier, string hubName, Guid planId, T eventData, CancellationToken cancellationToken) where T : JobEvent;
         Task<Timeline> GetTimelineAsync(Guid scopeIdentifier, string hubName, Guid planId, Guid timelineId, CancellationToken cancellationToken);
-        Task<ActionDownloadInfoCollection> ResolveActionDownloadInfoAsync(Guid scopeIdentifier, string hubName, Guid planId, ActionReferenceList actions, CancellationToken cancellationToken);
+        Task<ActionDownloadInfoCollection> ResolveActionDownloadInfoAsync(Guid scopeIdentifier, string hubName, Guid planId, Guid jobId, ActionReferenceList actions, CancellationToken cancellationToken);
     }
 
     public sealed class JobServer : RunnerService, IJobServer
@@ -35,7 +38,11 @@ namespace GitHub.Runner.Common
         public async Task ConnectAsync(VssConnection jobConnection)
         {
             _connection = jobConnection;
-            int attemptCount = 5;
+            int totalAttempts = 5;
+            int attemptCount = totalAttempts;
+            var configurationStore = HostContext.GetService<IConfigurationStore>();
+            var runnerSettings = configurationStore.GetSettings();
+
             while (!_connection.HasAuthenticated && attemptCount-- > 0)
             {
                 try
@@ -45,15 +52,69 @@ namespace GitHub.Runner.Common
                 }
                 catch (Exception ex) when (attemptCount > 0)
                 {
-                    Trace.Info($"Catch exception during connect. {attemptCount} attemp left.");
+                    Trace.Info($"Catch exception during connect. {attemptCount} attempts left.");
                     Trace.Error(ex);
+
+                    if (runnerSettings.IsHostedServer)
+                    {
+                        await CheckNetworkEndpointsAsync(attemptCount);
+                    }
                 }
 
-                await Task.Delay(100);
+                int attempt = totalAttempts - attemptCount;
+                TimeSpan backoff = BackoffTimerHelper.GetExponentialBackoff(attempt, TimeSpan.FromMilliseconds(100), TimeSpan.FromSeconds(3.2), TimeSpan.FromMilliseconds(100));
+
+                await Task.Delay(backoff);
             }
 
             _taskClient = _connection.GetClient<TaskHttpClient>();
             _hasConnection = true;
+        }
+
+        private async Task CheckNetworkEndpointsAsync(int attemptsLeft)
+        {
+            try
+            {
+                Trace.Info("Requesting Actions Service health endpoint status");
+                using (var httpClientHandler = HostContext.CreateHttpClientHandler())
+                using (var actionsClient = new HttpClient(httpClientHandler))
+                {
+                    var baseUri = new Uri(_connection.Uri.GetLeftPart(UriPartial.Authority));
+
+                    actionsClient.DefaultRequestHeaders.UserAgent.AddRange(HostContext.UserAgents);
+
+                    // Call the _apis/health endpoint, and include how many attempts are left as a URL query for easy tracking
+                    var response = await actionsClient.GetAsync(new Uri(baseUri, $"_apis/health?_internalRunnerAttemptsLeft={attemptsLeft}"));
+                    Trace.Info($"Actions health status code: {response.StatusCode}");
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log error, but continue as this call is best-effort
+                Trace.Info($"Actions Service health endpoint failed due to {ex.GetType().Name}");
+                Trace.Error(ex);
+            }
+
+            try
+            {
+                Trace.Info("Requesting Github API endpoint status");
+                // This is a dotcom public API... just call it directly
+                using (var httpClientHandler = HostContext.CreateHttpClientHandler())
+                using (var gitHubClient = new HttpClient(httpClientHandler))
+                {
+                    gitHubClient.DefaultRequestHeaders.UserAgent.AddRange(HostContext.UserAgents);
+
+                    // Call the api.github.com endpoint, and include how many attempts are left as a URL query for easy tracking
+                    var response = await gitHubClient.GetAsync($"https://api.github.com?_internalRunnerAttemptsLeft={attemptsLeft}");
+                    Trace.Info($"api.github.com status code: {response.StatusCode}");
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log error, but continue as this call is best-effort
+                Trace.Info($"Github API endpoint failed due to {ex.GetType().Name}");
+                Trace.Error(ex);
+            }
         }
 
         private void CheckConnection()
@@ -125,10 +186,10 @@ namespace GitHub.Runner.Common
         //-----------------------------------------------------------------
         // Action download info
         //-----------------------------------------------------------------
-        public Task<ActionDownloadInfoCollection> ResolveActionDownloadInfoAsync(Guid scopeIdentifier, string hubName, Guid planId, ActionReferenceList actions, CancellationToken cancellationToken)
+        public Task<ActionDownloadInfoCollection> ResolveActionDownloadInfoAsync(Guid scopeIdentifier, string hubName, Guid planId, Guid jobId, ActionReferenceList actions, CancellationToken cancellationToken)
         {
             CheckConnection();
-            return _taskClient.ResolveActionDownloadInfoAsync(scopeIdentifier, hubName, planId, actions, cancellationToken: cancellationToken);
+            return _taskClient.ResolveActionDownloadInfoAsync(scopeIdentifier, hubName, planId, jobId, actions, cancellationToken: cancellationToken);
         }
     }
 }

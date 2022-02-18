@@ -102,6 +102,7 @@ namespace GitHub.Runner.Common.Tests.Worker
             _message = new Pipelines.AgentJobRequestMessage(plan, timeline, jobId, "test", "test", null, null, null, new Dictionary<string, VariableValue>(), new List<MaskHint>(), new Pipelines.JobResources(), new Pipelines.ContextData.DictionaryContextData(), new Pipelines.WorkspaceOptions(), steps, null, null, null, null);
             GitHubContext github = new GitHubContext();
             github["repository"] = new Pipelines.ContextData.StringContextData("actions/runner");
+            github["secret_source"] = new Pipelines.ContextData.StringContextData("Actions");
             _message.ContextData.Add("github", github);
 
             hc.SetSingleton(_actionManager.Object);
@@ -141,7 +142,7 @@ namespace GitHub.Runner.Common.Tests.Worker
                 var jobExtension = new JobExtension();
                 jobExtension.Initialize(hc);
 
-                _actionManager.Setup(x => x.PrepareActionsAsync(It.IsAny<IExecutionContext>(), It.IsAny<IEnumerable<Pipelines.JobStep>>()))
+                _actionManager.Setup(x => x.PrepareActionsAsync(It.IsAny<IExecutionContext>(), It.IsAny<IEnumerable<Pipelines.JobStep>>(), It.IsAny<Guid>()))
                               .Returns(Task.FromResult(new PrepareResult(new List<JobExtensionRunner>(), new Dictionary<Guid, IActionRunner>())));
 
                 List<IStep> result = await jobExtension.InitializeJob(_jobEc, _message);
@@ -176,7 +177,7 @@ namespace GitHub.Runner.Common.Tests.Worker
                 var jobExtension = new JobExtension();
                 jobExtension.Initialize(hc);
 
-                _actionManager.Setup(x => x.PrepareActionsAsync(It.IsAny<IExecutionContext>(), It.IsAny<IEnumerable<Pipelines.JobStep>>()))
+                _actionManager.Setup(x => x.PrepareActionsAsync(It.IsAny<IExecutionContext>(), It.IsAny<IEnumerable<Pipelines.JobStep>>(), It.IsAny<Guid>()))
                               .Returns(Task.FromResult(new PrepareResult(new List<JobExtensionRunner>() { new JobExtensionRunner(null, "", "prepare1", null), new JobExtensionRunner(null, "", "prepare2", null) }, new Dictionary<Guid, IActionRunner>())));
 
                 List<IStep> result = await jobExtension.InitializeJob(_jobEc, _message);

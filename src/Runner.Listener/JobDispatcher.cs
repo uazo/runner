@@ -2,17 +2,19 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using GitHub.DistributedTask.WebApi;
-using GitHub.Runner.Common.Util;
-using GitHub.Services.WebApi;
-using Pipelines = GitHub.DistributedTask.Pipelines;
-using System.Linq;
-using GitHub.Services.Common;
 using GitHub.Runner.Common;
+using GitHub.Runner.Common.Util;
 using GitHub.Runner.Sdk;
+using GitHub.Services.Common;
+using GitHub.Services.WebApi;
 using GitHub.Services.WebApi.Jwt;
+using Pipelines = GitHub.DistributedTask.Pipelines;
 
 namespace GitHub.Runner.Listener
 {
@@ -34,9 +36,13 @@ namespace GitHub.Runner.Listener
     // and the server will not send another job while this one is still running.
     public sealed class JobDispatcher : RunnerService, IJobDispatcher
     {
+        private static Regex _invalidJsonRegex = new Regex(@"invalid\ Json\ at\ position\ '(\d+)':", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private readonly Lazy<Dictionary<long, TaskResult>> _localRunJobResult = new Lazy<Dictionary<long, TaskResult>>();
         private int _poolId;
-        RunnerSettings _runnerSetting;
+
+        IConfigurationStore _configurationStore;
+
+        RunnerSettings _runnerSettings;
         private static readonly string _workerProcessName = $"Runner.Worker{IOUtil.ExeExtension}";
 
         // this is not thread-safe
@@ -54,9 +60,9 @@ namespace GitHub.Runner.Listener
             base.Initialize(hostContext);
 
             // get pool id from config
-            var configurationStore = hostContext.GetService<IConfigurationStore>();
-            _runnerSetting = configurationStore.GetSettings();
-            _poolId = _runnerSetting.PoolId;
+            _configurationStore = hostContext.GetService<IConfigurationStore>();
+            _runnerSettings = _configurationStore.GetSettings();
+            _poolId = _runnerSettings.PoolId;
 
             int channelTimeoutSeconds;
             if (!int.TryParse(Environment.GetEnvironmentVariable("GITHUB_ACTIONS_RUNNER_CHANNEL_TIMEOUT") ?? string.Empty, out channelTimeoutSeconds))
@@ -507,7 +513,20 @@ namespace GitHub.Runner.Listener
                                 {
                                     detailInfo = string.Join(Environment.NewLine, workerOutput);
                                     Trace.Info($"Return code {returnCode} indicate worker encounter an unhandled exception or app crash, attach worker stdout/stderr to JobRequest result.");
-                                    await LogWorkerProcessUnhandledException(message, detailInfo);
+
+                                    var jobServer = HostContext.GetService<IJobServer>();
+                                    VssCredentials jobServerCredential = VssUtil.GetVssCredential(systemConnection);
+                                    VssConnection jobConnection = VssUtil.CreateConnection(systemConnection.Url, jobServerCredential);
+                                    await jobServer.ConnectAsync(jobConnection);
+
+                                    await LogWorkerProcessUnhandledException(jobServer, message, detailInfo);
+
+                                    // Go ahead to finish the job with result 'Failed' if the STDERR from worker is System.IO.IOException, since it typically means we are running out of disk space.
+                                    if (detailInfo.Contains(typeof(System.IO.IOException).ToString(), StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        Trace.Info($"Finish job with result 'Failed' due to IOException.");
+                                        await ForceFailJob(jobServer, message);
+                                    }
                                 }
 
                                 TaskResult result = TaskResultUtil.TranslateFromReturnCode(returnCode);
@@ -648,13 +667,15 @@ namespace GitHub.Runner.Listener
                 try
                 {
                     request = await runnerServer.RenewAgentRequestAsync(poolId, requestId, lockToken, orchestrationId, token);
-
                     Trace.Info($"Successfully renew job request {requestId}, job is valid till {request.LockedUntil.Value}");
 
                     if (!firstJobRequestRenewed.Task.IsCompleted)
                     {
                         // fire first renew succeed event.
                         firstJobRequestRenewed.TrySetResult(0);
+
+                        // Update settings if the runner name has been changed server-side
+                        UpdateAgentNameIfNeeded(request.ReservedAgent?.Name);
                     }
 
                     if (encounteringError > 0)
@@ -752,6 +773,27 @@ namespace GitHub.Runner.Listener
                     }
                 }
             }
+        }
+
+        private void UpdateAgentNameIfNeeded(string agentName)
+        {
+            var isNewAgentName = !string.Equals(_runnerSettings.AgentName, agentName, StringComparison.Ordinal);
+            if (!isNewAgentName || string.IsNullOrEmpty(agentName))
+            {
+                return;
+            }
+
+            _runnerSettings.AgentName = agentName;
+            try
+            {
+                _configurationStore.SaveSettings(_runnerSettings);
+            }
+            catch (Exception ex)
+            {
+                Trace.Error("Cannot update the settings file:");
+                Trace.Error(ex);
+            }
+
         }
 
         // Best effort upload any logs for this job.
@@ -915,53 +957,40 @@ namespace GitHub.Runner.Listener
         }
 
         // log an error issue to job level timeline record
-        private async Task LogWorkerProcessUnhandledException(Pipelines.AgentJobRequestMessage message, string errorMessage)
+        private async Task LogWorkerProcessUnhandledException(IJobServer jobServer, Pipelines.AgentJobRequestMessage message, string errorMessage)
         {
             try
             {
-                var systemConnection = message.Resources.Endpoints.SingleOrDefault(x => string.Equals(x.Name, WellKnownServiceEndpointNames.SystemVssConnection));
-                ArgUtil.NotNull(systemConnection, nameof(systemConnection));
-
-                var jobServer = HostContext.GetService<IJobServer>();
-                VssCredentials jobServerCredential = VssUtil.GetVssCredential(systemConnection);
-                VssConnection jobConnection = VssUtil.CreateConnection(systemConnection.Url, jobServerCredential);
-
-                /* Below is the legacy 'OnPremises' code that is currently unused by the runner
-                   ToDo: re-implement code as appropriate once GHES support is added.
-                // Make sure SystemConnection Url match Config Url base for OnPremises server	
-                if (!message.Variables.ContainsKey(Constants.Variables.System.ServerType) ||	
-                    string.Equals(message.Variables[Constants.Variables.System.ServerType]?.Value, "OnPremises", StringComparison.OrdinalIgnoreCase))	
-                {	
-                    try	
-                    {	
-                        Uri result = null;	
-                        Uri configUri = new Uri(_runnerSetting.ServerUrl);	
-                        if (Uri.TryCreate(new Uri(configUri.GetComponents(UriComponents.SchemeAndServer, UriFormat.Unescaped)), jobServerUrl.PathAndQuery, out result))	
-                        {	
-                            //replace the schema and host portion of messageUri with the host from the	
-                            //server URI (which was set at config time)	
-                            jobServerUrl = result;	
-                        }	
-                    }	
-                    catch (InvalidOperationException ex)	
-                    {	
-                        //cannot parse the Uri - not a fatal error	
-                        Trace.Error(ex);	
-                    }	
-                    catch (UriFormatException ex)	
-                    {	
-                        //cannot parse the Uri - not a fatal error	
-                        Trace.Error(ex);	
-                    }	
-                } */
-
-                await jobServer.ConnectAsync(jobConnection);
-
                 var timeline = await jobServer.GetTimelineAsync(message.Plan.ScopeIdentifier, message.Plan.PlanType, message.Plan.PlanId, message.Timeline.Id, CancellationToken.None);
-
                 ArgUtil.NotNull(timeline, nameof(timeline));
+
                 TimelineRecord jobRecord = timeline.Records.FirstOrDefault(x => x.Id == message.JobId && x.RecordType == "Job");
                 ArgUtil.NotNull(jobRecord, nameof(jobRecord));
+
+                try
+                {
+                    if (!string.IsNullOrEmpty(errorMessage) &&
+                        message.Variables.TryGetValue("DistributedTask.EnableRunnerIPCDebug", out var enableRunnerIPCDebug) &&
+                        StringUtil.ConvertToBoolean(enableRunnerIPCDebug.Value))
+                    {
+                        // the trace should be best effort and not affect any job result
+                        var match = _invalidJsonRegex.Match(errorMessage);
+                        if (match.Success &&
+                            match.Groups.Count == 2)
+                        {
+                            var jsonPosition = int.Parse(match.Groups[1].Value);
+                            var serializedJobMessage = JsonUtility.ToString(message);
+                            var originalJson = serializedJobMessage.Substring(jsonPosition - 10, 20);
+                            errorMessage = $"Runner sent Json at position '{jsonPosition}': {originalJson} ({Convert.ToBase64String(Encoding.UTF8.GetBytes(originalJson))})\n{errorMessage}";
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Trace.Error(ex);
+                    errorMessage = $"Fail to check json IPC error: {ex.Message}\n{errorMessage}";
+                }
+
                 var unhandledExceptionIssue = new Issue() { Type = IssueType.Error, Message = errorMessage };
                 unhandledExceptionIssue.Data[Constants.Runner.InternalTelemetryIssueDataKey] = Constants.Runner.WorkerCrash;
                 jobRecord.ErrorCount++;
@@ -971,6 +1000,21 @@ namespace GitHub.Runner.Listener
             catch (Exception ex)
             {
                 Trace.Error("Fail to report unhandled exception from Runner.Worker process");
+                Trace.Error(ex);
+            }
+        }
+
+        // raise job completed event to fail the job.
+        private async Task ForceFailJob(IJobServer jobServer, Pipelines.AgentJobRequestMessage message)
+        {
+            try
+            {
+                var jobCompletedEvent = new JobCompletedEvent(message.RequestId, message.JobId, TaskResult.Failed);
+                await jobServer.RaisePlanEventAsync<JobCompletedEvent>(message.Plan.ScopeIdentifier, message.Plan.PlanType, message.Plan.PlanId, jobCompletedEvent, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                Trace.Error("Fail to raise JobCompletedEvent back to service.");
                 Trace.Error(ex);
             }
         }

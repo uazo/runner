@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
@@ -7,12 +8,11 @@ using GitHub.DistributedTask.ObjectTemplating.Tokens;
 using GitHub.DistributedTask.Pipelines;
 using GitHub.DistributedTask.Pipelines.ContextData;
 using GitHub.DistributedTask.Pipelines.ObjectTemplating;
+using GitHub.Runner.Common;
 using GitHub.Runner.Common.Util;
+using GitHub.Runner.Sdk;
 using GitHub.Runner.Worker.Handlers;
 using Pipelines = GitHub.DistributedTask.Pipelines;
-using GitHub.Runner.Common;
-using GitHub.Runner.Sdk;
-using System.Collections.Generic;
 
 namespace GitHub.Runner.Worker
 {
@@ -81,6 +81,28 @@ namespace GitHub.Runner.Worker
 
             ActionExecutionData handlerData = definition.Data?.Execution;
             ArgUtil.NotNull(handlerData, nameof(handlerData));
+
+            List<JobExtensionRunner> localActionContainerSetupSteps = null;
+            // Handle Composite Local Actions
+            // Need to download and expand the tree of referenced actions
+            if (handlerData.ExecutionType == ActionExecutionType.Composite &&
+                handlerData is CompositeActionExecutionData compositeHandlerData &&
+                Stage == ActionRunStage.Main &&
+                Action.Reference is Pipelines.RepositoryPathReference localAction &&
+                string.Equals(localAction.RepositoryType, Pipelines.PipelineConstants.SelfAlias, StringComparison.OrdinalIgnoreCase))
+            {
+                var actionManager = HostContext.GetService<IActionManager>();
+                var prepareResult = await actionManager.PrepareActionsAsync(ExecutionContext, compositeHandlerData.Steps, ExecutionContext.Id);
+
+                // Reload definition since post may exist now (from embedded steps that were JIT downloaded)
+                definition = taskManager.LoadAction(ExecutionContext, Action);
+                ArgUtil.NotNull(definition, nameof(definition));
+                handlerData = definition.Data?.Execution;
+                ArgUtil.NotNull(handlerData, nameof(handlerData));
+
+                // Save container setup steps so we can reference them later
+                localActionContainerSetupSteps = prepareResult.ContainerSetupSteps;
+            }
 
             if (handlerData.HasPre &&
                 Action.Reference is Pipelines.RepositoryPathReference repoAction &&
@@ -249,10 +271,11 @@ namespace GitHub.Runner.Worker
                             inputs,
                             environment,
                             ExecutionContext.Global.Variables,
-                            actionDirectory: definition.Directory);
+                            actionDirectory: definition.Directory,
+                            localActionContainerSetupSteps: localActionContainerSetupSteps);
 
-            // Print out action details
-            handler.PrintActionDetails(Stage);
+            // Print out action details and log telemetry
+            handler.PrepareExecution(Stage);
 
             // Run the task.
             try

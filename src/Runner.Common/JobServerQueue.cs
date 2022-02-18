@@ -1,20 +1,20 @@
-using GitHub.DistributedTask.WebApi;
-using GitHub.Runner.Common.Util;
 using System;
-using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Pipelines = GitHub.DistributedTask.Pipelines;
+using GitHub.DistributedTask.WebApi;
 using GitHub.Runner.Sdk;
+using Pipelines = GitHub.DistributedTask.Pipelines;
 
 namespace GitHub.Runner.Common
 {
     [ServiceLocator(Default = typeof(JobServerQueue))]
     public interface IJobServerQueue : IRunnerService, IThrottlingReporter
     {
+        TaskCompletionSource<int> JobRecordUpdated { get; }
         event EventHandler<ThrottlingEventArgs> JobServerQueueThrottling;
         Task ShutdownAsync();
         void Start(Pipelines.AgentJobRequestMessage jobRequest);
@@ -62,7 +62,10 @@ namespace GitHub.Runner.Common
         private IJobServer _jobServer;
         private Task[] _allDequeueTasks;
         private readonly TaskCompletionSource<int> _jobCompletionSource = new TaskCompletionSource<int>();
+        private readonly TaskCompletionSource<int> _jobRecordUpdated = new TaskCompletionSource<int>();
         private bool _queueInProcess = false;
+
+        public TaskCompletionSource<int> JobRecordUpdated => _jobRecordUpdated;
 
         public event EventHandler<ThrottlingEventArgs> JobServerQueueThrottling;
 
@@ -72,6 +75,7 @@ namespace GitHub.Runner.Common
         // at the same time we can cut the load to server after the build run for more than 60s
         private int _webConsoleLineAggressiveDequeueCount = 0;
         private const int _webConsoleLineAggressiveDequeueLimit = 4 * 60;
+        private const int _webConsoleLineQueueSizeLimit = 1024;
         private bool _webConsoleLineAggressiveDequeue = true;
         private bool _firstConsoleOutputs = true;
 
@@ -157,8 +161,20 @@ namespace GitHub.Runner.Common
 
         public void QueueWebConsoleLine(Guid stepRecordId, string line, long? lineNumber)
         {
-            Trace.Verbose("Enqueue web console line queue: {0}", line);
-            _webConsoleLineQueue.Enqueue(new ConsoleLineInfo(stepRecordId, line, lineNumber));
+            // We only process 500 lines of the queue everytime.
+            // If the queue is backing up due to slow Http request or flood of output from step,
+            // we will drop the output to avoid extra memory consumption from the runner since the live console feed is best effort.
+            if (!string.IsNullOrEmpty(line) && _webConsoleLineQueue.Count < _webConsoleLineQueueSizeLimit)
+            {
+                Trace.Verbose("Enqueue web console line queue: {0}", line);
+                if (line.Length > 1024)
+                {
+                    Trace.Verbose("Web console line is more than 1024 chars, truncate to first 1024 chars");
+                    line = $"{line.Substring(0, 1024)}...";
+                }
+
+                _webConsoleLineQueue.Enqueue(new ConsoleLineInfo(stepRecordId, line, lineNumber));
+            }
         }
 
         public void QueueFileUpload(Guid timelineId, Guid timelineRecordId, string type, string name, string path, bool deleteSource)
@@ -226,12 +242,6 @@ namespace GitHub.Runner.Common
                         stepRecordIds.Add(lineInfo.StepRecordId);
                     }
 
-                    if (!string.IsNullOrEmpty(lineInfo.Line) && lineInfo.Line.Length > 1024)
-                    {
-                        Trace.Verbose("Web console line is more than 1024 chars, truncate to first 1024 chars");
-                        lineInfo.Line = $"{lineInfo.Line.Substring(0, 1024)}...";
-                    }
-
                     stepsConsoleLines[lineInfo.StepRecordId].Add(new TimelineRecordLogLine(lineInfo.Line, lineInfo.LineNumber));
                     linesCounter++;
 
@@ -287,11 +297,11 @@ namespace GitHub.Runner.Common
                                 {
                                     await _jobServer.AppendTimelineRecordFeedAsync(_scopeIdentifier, _hubName, _planId, _jobTimelineId, _jobTimelineRecordId, stepRecordId, batch.Select(logLine => logLine.Line).ToList(), batch[0].LineNumber.Value, default(CancellationToken));
                                 }
-                                else 
+                                else
                                 {
                                     await _jobServer.AppendTimelineRecordFeedAsync(_scopeIdentifier, _hubName, _planId, _jobTimelineId, _jobTimelineRecordId, stepRecordId, batch.Select(logLine => logLine.Line).ToList(), default(CancellationToken));
                                 }
-                                
+
                                 if (_firstConsoleOutputs)
                                 {
                                     HostContext.WritePerfCounter($"WorkerJobServerQueueAppendFirstConsoleOutput_{_planId.ToString()}");
@@ -454,6 +464,14 @@ namespace GitHub.Runner.Common
                             if (_bufferedRetryRecords.Remove(update.TimelineId))
                             {
                                 Trace.Verbose("Cleanup buffered timeline record for timeline: {0}.", update.TimelineId);
+                            }
+
+                            if (!_jobRecordUpdated.Task.IsCompleted &&
+                                update.PendingRecords.Any(x => x.Id == _jobTimelineRecordId && x.State != null))
+                            {
+                                // We have changed the state of the job
+                                Trace.Info("Job timeline record has been updated for the first time.");
+                                _jobRecordUpdated.TrySetResult(0);
                             }
                         }
                         catch (Exception ex)

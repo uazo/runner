@@ -1,17 +1,27 @@
+<<<<<<< HEAD
 using GitHub.DistributedTask.WebApi;
 using Pipelines = GitHub.DistributedTask.Pipelines;
 using GitHub.Runner.Common.Util;
 using GitHub.Services.Common;
 using GitHub.Services.WebApi;
 using System;
+=======
+﻿using System;
+>>>>>>> upstream/main
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Net.Http;
+using GitHub.DistributedTask.WebApi;
 using GitHub.Runner.Common;
+using GitHub.Runner.Common.Util;
 using GitHub.Runner.Sdk;
+using GitHub.Services.Common;
+using GitHub.Services.WebApi;
+using Pipelines = GitHub.DistributedTask.Pipelines;
 
 namespace GitHub.Runner.Worker
 {
@@ -24,6 +34,7 @@ namespace GitHub.Runner.Worker
     public sealed partial class JobRunner : RunnerService, IJobRunner
     {
         private IJobServerQueue _jobServerQueue;
+        private RunnerSettings _runnerSettings;
         private ITempDirectoryManager _tempDirectoryManager;
 
         public async Task<TaskResult> RunAsync(Pipelines.AgentJobRequestMessage message, CancellationToken jobRequestCancellationToken)
@@ -109,6 +120,10 @@ namespace GitHub.Runner.Worker
                 }
 
                 jobContext.SetRunnerContext("os", VarUtil.OS);
+                jobContext.SetRunnerContext("arch", VarUtil.OSArchitecture);
+
+                _runnerSettings = HostContext.GetService<IConfigurationStore>().GetSettings();
+                jobContext.SetRunnerContext("name", _runnerSettings.AgentName);
 
                 string toolsDirectory = HostContext.GetDirectory(WellKnownDirectory.Tools);
                 Directory.CreateDirectory(toolsDirectory);
@@ -148,6 +163,16 @@ namespace GitHub.Runner.Worker
                 Trace.Info($"Total job steps: {jobSteps.Count}.");
                 Trace.Verbose($"Job steps: '{string.Join(", ", jobSteps.Select(x => x.DisplayName))}'");
                 HostContext.WritePerfCounter($"WorkerJobInitialized_{message.RequestId.ToString()}");
+
+                if (systemConnection.Data.TryGetValue("GenerateIdTokenUrl", out var generateIdTokenUrl) &&
+                    !string.IsNullOrEmpty(generateIdTokenUrl))
+                {
+                    // Server won't issue ID_TOKEN for non-inprogress job.
+                    // If the job is trying to use OIDC feature, we want the job to be marked as in-progress before running any customer's steps as much as we can.
+                    // Timeline record update background process runs every 500ms, so delay 1000ms is enough for most of the cases
+                    Trace.Info($"Waiting for job to be marked as started.");
+                    await Task.WhenAny(_jobServerQueue.JobRecordUpdated.Task, Task.Delay(1000));
+                }
 
                 // Run all job steps
                 Trace.Info("Run all job steps.");
@@ -198,6 +223,53 @@ namespace GitHub.Runner.Worker
             jobContext.Debug($"Finishing: {message.JobDisplayName}");
             TaskResult result = jobContext.Complete(taskResult);
 
+            if (_runnerSettings.DisableUpdate == true)
+            {
+                try
+                {
+                    var currentVersion = new PackageVersion(BuildConstants.RunnerPackage.Version);
+                    ServiceEndpoint systemConnection = message.Resources.Endpoints.Single(x => string.Equals(x.Name, WellKnownServiceEndpointNames.SystemVssConnection, StringComparison.OrdinalIgnoreCase));
+                    VssCredentials serverCredential = VssUtil.GetVssCredential(systemConnection);
+
+                    var runnerServer = HostContext.GetService<IRunnerServer>();
+                    await runnerServer.ConnectAsync(systemConnection.Url, serverCredential);
+                    var serverPackages = await runnerServer.GetPackagesAsync("agent", BuildConstants.RunnerPackage.PackageName, 5, includeToken: false, cancellationToken: CancellationToken.None);
+                    if (serverPackages.Count > 0)
+                    {
+                        serverPackages = serverPackages.OrderByDescending(x => x.Version).ToList();
+                        Trace.Info($"Newer packages {StringUtil.ConvertToJson(serverPackages.Select(x => x.Version.ToString()))}");
+
+                        var warnOnFailedJob = false; // any minor/patch version behind.
+                        var warnOnOldRunnerVersion = false; // >= 2 minor version behind
+                        if (serverPackages.Any(x => x.Version.CompareTo(currentVersion) > 0))
+                        {
+                            Trace.Info($"Current runner version {currentVersion} is behind the latest runner version {serverPackages[0].Version}.");
+                            warnOnFailedJob = true;
+                        }
+
+                        if (serverPackages.Where(x => x.Version.Major == currentVersion.Major && x.Version.Minor > currentVersion.Minor).Count() > 1)
+                        {
+                            Trace.Info($"Current runner version {currentVersion} is way behind the latest runner version {serverPackages[0].Version}.");
+                            warnOnOldRunnerVersion = true;
+                        }
+
+                        if (result == TaskResult.Failed && warnOnFailedJob)
+                        {
+                            jobContext.Warning($"This job failure may be caused by using an out of date self-hosted runner. You are currently using runner version {currentVersion}. Please update to the latest version {serverPackages[0].Version}");
+                        }
+                        else if (warnOnOldRunnerVersion)
+                        {
+                            jobContext.Warning($"This self-hosted runner is currently using runner version {currentVersion}. This version is out of date. Please update to the latest version {serverPackages[0].Version}");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Ignore any error since suggest runner update is best effort.
+                    Trace.Error($"Caught exception during runner version check: {ex}");
+                }
+            }
+
             try
             {
                 await ShutdownQueue(throwOnFailure: true);
@@ -219,8 +291,14 @@ namespace GitHub.Runner.Worker
                 return result;
             }
 
-            Trace.Info("Raising job completed event.");
-            var jobCompletedEvent = new JobCompletedEvent(message.RequestId, message.JobId, result, jobContext.JobOutputs, jobContext.ActionsEnvironment);
+            // Load any upgrade telemetry
+            LoadFromTelemetryFile(jobContext.Global.JobTelemetry);
+
+            // Make sure we don't submit secrets as telemetry
+            MaskTelemetrySecrets(jobContext.Global.JobTelemetry);
+
+            Trace.Info($"Raising job completed event");
+            var jobCompletedEvent = new JobCompletedEvent(message.RequestId, message.JobId, result, jobContext.JobOutputs, jobContext.ActionsEnvironment, jobContext.Global.StepsTelemetry, jobContext.Global.JobTelemetry);
 
             var completeJobRetryLimit = 5;
             var exceptions = new List<Exception>();
@@ -262,6 +340,38 @@ namespace GitHub.Runner.Worker
 
             // rethrow exceptions from all attempts.
             throw new AggregateException(exceptions);
+        }
+
+        private void MaskTelemetrySecrets(List<JobTelemetry> jobTelemetry)
+        {
+            foreach (var telemetryItem in jobTelemetry)
+            {
+                telemetryItem.Message = HostContext.SecretMasker.MaskSecrets(telemetryItem.Message);
+            }
+        }
+
+        private void LoadFromTelemetryFile(List<JobTelemetry> jobTelemetry)
+        {
+            try
+            {
+                var telemetryFilePath = HostContext.GetConfigFile(WellKnownConfigFile.Telemetry);
+                if (File.Exists(telemetryFilePath))
+                {
+                    var telemetryData = File.ReadAllText(telemetryFilePath, Encoding.UTF8);
+                    var telemetry = new JobTelemetry
+                    {
+                        Message = $"Runner File Telemetry:\n{telemetryData}",
+                        Type = JobTelemetryType.General
+                    };
+                    jobTelemetry.Add(telemetry);
+                    IOUtil.DeleteFile(telemetryFilePath);
+                }
+            }
+            catch (Exception e)
+            {
+                Trace.Error("Error when trying to load telemetry from telemetry file");
+                Trace.Error(e);
+            }
         }
 
         private async Task ShutdownQueue(bool throwOnFailure)

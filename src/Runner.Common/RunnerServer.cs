@@ -29,8 +29,10 @@ namespace GitHub.Runner.Common
         // Configuration
         Task<TaskAgent> AddAgentAsync(Int32 agentPoolId, TaskAgent agent);
         Task DeleteAgentAsync(int agentPoolId, int agentId);
+        Task DeleteAgentAsync(int agentId);
         Task<List<TaskAgentPool>> GetAgentPoolsAsync(string agentPoolName = null, TaskAgentPoolType poolType = TaskAgentPoolType.Automation);
         Task<List<TaskAgent>> GetAgentsAsync(int agentPoolId, string agentName = null);
+        Task<List<TaskAgent>> GetAgentsAsync(string agentName);
         Task<TaskAgent> ReplaceAgentAsync(int agentPoolId, TaskAgent agent);
 
         // messagequeue
@@ -49,7 +51,7 @@ namespace GitHub.Runner.Common
         Task<PackageMetadata> GetPackageAsync(string packageType, string platform, string version, bool includeToken, CancellationToken cancellationToken);
 
         // agent update
-        Task<TaskAgent> UpdateAgentUpdateStateAsync(int agentPoolId, int agentId, string currentState);
+        Task<TaskAgent> UpdateAgentUpdateStateAsync(int agentPoolId, int agentId, string currentState, string trace);
     }
 
     public sealed class RunnerServer : RunnerService, IRunnerServer
@@ -252,6 +254,11 @@ namespace GitHub.Runner.Common
             return _genericTaskAgentClient.GetAgentsAsync(agentPoolId, agentName, false);
         }
 
+        public Task<List<TaskAgent>> GetAgentsAsync(string agentName)
+        {
+            return GetAgentsAsync(0, agentName); // search in all all agentPools
+        }
+
         public Task<TaskAgent> ReplaceAgentAsync(int agentPoolId, TaskAgent agent)
         {
             CheckConnection(RunnerConnectionType.Generic);
@@ -262,6 +269,11 @@ namespace GitHub.Runner.Common
         {
             CheckConnection(RunnerConnectionType.Generic);
             return _genericTaskAgentClient.DeleteAgentAsync(agentPoolId, agentId);
+        }
+
+        public Task DeleteAgentAsync(int agentId)
+        {
+            return DeleteAgentAsync(0, agentId); // agentPool is ignored server side
         }
 
         //-----------------------------------------------------------------
@@ -329,25 +341,10 @@ namespace GitHub.Runner.Common
             return _genericTaskAgentClient.GetPackageAsync(packageType, platform, version, includeToken, cancellationToken: cancellationToken);
         }
 
-        public Task<TaskAgent> UpdateAgentUpdateStateAsync(int agentPoolId, int agentId, string currentState)
+        public Task<TaskAgent> UpdateAgentUpdateStateAsync(int agentPoolId, int agentId, string currentState, string trace)
         {
             CheckConnection(RunnerConnectionType.Generic);
-            return _genericTaskAgentClient.UpdateAgentUpdateStateAsync(agentPoolId, agentId, currentState);
-        }
-
-        //-----------------------------------------------------------------
-        // Runner Auth Url
-        //-----------------------------------------------------------------
-        public Task<string> GetRunnerAuthUrlAsync(int runnerPoolId, int runnerId)
-        {
-            CheckConnection(RunnerConnectionType.MessageQueue);
-            return _messageTaskAgentClient.GetAgentAuthUrlAsync(runnerPoolId, runnerId);
-        }
-
-        public Task ReportRunnerAuthUrlErrorAsync(int runnerPoolId, int runnerId, string error)
-        {
-            CheckConnection(RunnerConnectionType.MessageQueue);
-            return _messageTaskAgentClient.ReportAgentAuthUrlMigrationErrorAsync(runnerPoolId, runnerId, error);
+            return _genericTaskAgentClient.UpdateAgentUpdateStateAsync(agentPoolId, agentId, currentState, trace);
         }
     }
 }

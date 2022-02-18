@@ -451,7 +451,8 @@ namespace GitHub.Runner.Worker
                         };
                     }
                 }
-                else if (string.Equals(usingToken.Value, "node12", StringComparison.OrdinalIgnoreCase))
+                else if (string.Equals(usingToken.Value, "node12", StringComparison.OrdinalIgnoreCase)||
+                         string.Equals(usingToken.Value, "node16", StringComparison.OrdinalIgnoreCase))
                 {
                     if (string.IsNullOrEmpty(mainToken?.Value))
                     {
@@ -461,6 +462,7 @@ namespace GitHub.Runner.Worker
                     {
                         return new NodeJSActionExecutionData()
                         {
+                            NodeVersion = usingToken.Value,
                             Script = mainToken.Value,
                             Pre = preToken?.Value,
                             InitCondition = preIfToken?.Value ?? "always()",
@@ -480,13 +482,17 @@ namespace GitHub.Runner.Worker
                         return new CompositeActionExecutionData()
                         {
                             Steps = steps.Cast<Pipelines.ActionStep>().ToList(),
+                            PreSteps = new List<Pipelines.ActionStep>(),
+                            PostSteps = new Stack<Pipelines.ActionStep>(),
+                            InitCondition = "always()",
+                            CleanupCondition = "always()",
                             Outputs = outputs
                         };
                     }
                 }
                 else
                 {
-                    throw new ArgumentOutOfRangeException($"'using: {usingToken.Value}' is not supported, use 'docker' or 'node12' instead.");
+                    throw new ArgumentOutOfRangeException($"'using: {usingToken.Value}' is not supported, use 'docker', 'node12' or 'node16' instead.");
                 }
             }
             else if (pluginToken != null)
