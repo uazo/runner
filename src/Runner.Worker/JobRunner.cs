@@ -60,6 +60,9 @@ namespace GitHub.Runner.Worker
             CancellationTokenRegistration? runnerShutdownRegistration = null;
             try
             {
+                // Load settings early
+                _runnerSettings = HostContext.GetService<IConfigurationStore>().GetSettings();
+
                 // Create the job execution context.
                 jobContext = HostContext.CreateService<IExecutionContext>();
                 jobContext.InitializeJob(message, jobRequestCancellationToken);
@@ -113,7 +116,6 @@ namespace GitHub.Runner.Worker
                 jobContext.SetRunnerContext("os", VarUtil.OS);
                 jobContext.SetRunnerContext("arch", VarUtil.OSArchitecture);
 
-                _runnerSettings = HostContext.GetService<IConfigurationStore>().GetSettings();
                 jobContext.SetRunnerContext("name", _runnerSettings.AgentName);
 
                 string toolsDirectory = HostContext.GetDirectory(WellKnownDirectory.Tools);
