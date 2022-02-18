@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -15,6 +15,7 @@ using Xunit;
 
 namespace GitHub.Runner.Common.Tests.Listener
 {
+#if IGNORE
     public sealed class SelfUpdaterL0
     {
         private Mock<IRunnerServer> _runnerServer;
@@ -790,4 +791,5 @@ namespace GitHub.Runner.Common.Tests.Listener
             }
         }
     }
+#endif
 }
