@@ -1,13 +1,4 @@
-<<<<<<< HEAD
-using GitHub.DistributedTask.WebApi;
-using Pipelines = GitHub.DistributedTask.Pipelines;
-using GitHub.Runner.Common.Util;
-using GitHub.Services.Common;
-using GitHub.Services.WebApi;
 using System;
-=======
-﻿using System;
->>>>>>> upstream/main
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
