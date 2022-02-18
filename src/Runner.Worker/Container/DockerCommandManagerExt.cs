@@ -18,7 +18,7 @@ namespace GitHub.Runner.Worker.Container
       bool removeDockerSupport = container.ContainerEnvironmentVariables.ContainsKey("REMOVEDOCKERSUPPORT");
       foreach (var volume in container.MountVolumes)
       {
-        if (removeDockerSupport && volume.SourceVolumePath == "/var/run/docker.sock")
+        if (removeDockerSupport && MustBeRemoved(volume))
           continue;
 
         // replace `"` with `\"` and add `"{0}"` to all path.
@@ -39,6 +39,16 @@ namespace GitHub.Runner.Worker.Container
         }
         dockerOptions.Add(volumeArg);
       }
+    }
+
+    private bool MustBeRemoved(MountVolume volume)
+    {
+      if (volume.SourceVolumePath == "/var/run/docker.sock") return true;
+      // TODO(uazo) need some tests before remove this
+      //if (volume.TargetVolumePath.StartsWith("/__w")) return true;
+      //if (volume.TargetVolumePath.StartsWith("/__t")) return true;
+      //if (volume.TargetVolumePath.StartsWith("/__e")) return true;
+      return false;
     }
   }
 }

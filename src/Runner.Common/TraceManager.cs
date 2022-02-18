@@ -1,4 +1,4 @@
-﻿using GitHub.Runner.Common.Util;
+using GitHub.Runner.Common.Util;
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -82,7 +82,7 @@ namespace GitHub.Runner.Common
                     Level = sourceTraceLevel.ToSourceLevels()
                 };
             }
-            return new Tracing(name, _secretMasker, sourceSwitch, _hostTraceListener);
+            return new Tracing(name, _secretMasker, sourceSwitch, _hostTraceListener, _traceSetting.TraceToConsole);
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.Serialization;
@@ -19,6 +19,12 @@ namespace GitHub.Runner.Common
             {
                 DefaultTraceLevel = TraceLevel.Verbose;
             }
+
+            string actionsRunnerTraceToConsole = Environment.GetEnvironmentVariable("GITHUB_ACTIONS_RUNNER_TRACE_TO_CONSOLE");
+            if (!string.IsNullOrEmpty(actionsRunnerTraceToConsole))
+            {
+                TraceToConsole = true;
+            }
         }
 
         [DataMember(EmitDefaultValue = false)]
@@ -27,6 +33,8 @@ namespace GitHub.Runner.Common
             get;
             set;
         }
+
+        public bool TraceToConsole { get; set; } = false;
 
         public Dictionary<String, TraceLevel> DetailTraceSetting
         {

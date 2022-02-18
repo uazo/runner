@@ -1,4 +1,4 @@
-﻿
+
 using GitHub.Runner.Common.Util;
 using Newtonsoft.Json;
 using System;
@@ -13,11 +13,14 @@ namespace GitHub.Runner.Common
     {
         private ISecretMasker _secretMasker;
         private TraceSource _traceSource;
+        private bool _traceToConsole;
 
-        public Tracing(string name, ISecretMasker secretMasker, SourceSwitch sourceSwitch, HostTraceListener traceListener)
+        public Tracing(string name, ISecretMasker secretMasker, SourceSwitch sourceSwitch, HostTraceListener traceListener,
+          bool traceToConsole)
         {
             ArgUtil.NotNull(secretMasker, nameof(secretMasker));
             _secretMasker = secretMasker;
+            _traceToConsole = traceToConsole;
             _traceSource = new TraceSource(name);
             _traceSource.Switch = sourceSwitch;
 
@@ -117,10 +120,15 @@ namespace GitHub.Runner.Common
         private void Trace(TraceEventType eventType, string message)
         {
             ArgUtil.NotNull(_traceSource, nameof(_traceSource));
+            message = _secretMasker.MaskSecrets(message);
             _traceSource.TraceEvent(
                 eventType: eventType,
                 id: 0,
-                message: _secretMasker.MaskSecrets(message));
+                message: message);
+            if(_traceToConsole) 
+            {
+                Console.WriteLine($"{eventType}: {message}");
+            }
         }
 
         private void Dispose(bool disposing)
