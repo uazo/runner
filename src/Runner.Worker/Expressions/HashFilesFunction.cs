@@ -32,7 +32,7 @@ namespace GitHub.Runner.Worker.Expressions
 
             string githubWorkspace = workspaceData.Value;
             bool followSymlink = false;
-            List<string> patterns = new List<string>();
+            List<string> patterns = new();
             var firstParameter = true;
             foreach (var parameter in Parameters)
             {
@@ -63,7 +63,7 @@ namespace GitHub.Runner.Worker.Expressions
             string binDir = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
             string runnerRoot = new DirectoryInfo(binDir).Parent.FullName;
 
-            string node = Path.Combine(runnerRoot, "externals", NodeUtil.GetNodeVersion(), "bin", $"node{IOUtil.ExeExtension}");
+            string node = Path.Combine(runnerRoot, "externals", NodeUtil.GetInternalNodeVersion(), "bin", $"node{IOUtil.ExeExtension}");
             string hashFilesScript = Path.Combine(binDir, "hashFiles");
             var hashResult = string.Empty;
             var p = new ProcessInvoker(new HashFilesTrace(context.Trace));

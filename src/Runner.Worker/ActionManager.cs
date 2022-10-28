@@ -52,16 +52,16 @@ namespace GitHub.Runner.Worker
         private const int _defaultCopyBufferSize = 81920;
         private const string _dotcomApiUrl = "https://api.github.com";
 
-        private readonly Dictionary<Guid, ContainerInfo> _cachedActionContainers = new Dictionary<Guid, ContainerInfo>();
+        private readonly Dictionary<Guid, ContainerInfo> _cachedActionContainers = new();
         public Dictionary<Guid, ContainerInfo> CachedActionContainers => _cachedActionContainers;
 
-        private readonly Dictionary<Guid, List<Pipelines.ActionStep>> _cachedEmbeddedPreSteps = new Dictionary<Guid, List<Pipelines.ActionStep>>();
+        private readonly Dictionary<Guid, List<Pipelines.ActionStep>> _cachedEmbeddedPreSteps = new();
         public Dictionary<Guid, List<Pipelines.ActionStep>> CachedEmbeddedPreSteps => _cachedEmbeddedPreSteps;
 
-        private readonly Dictionary<Guid, List<Guid>> _cachedEmbeddedStepIds = new Dictionary<Guid, List<Guid>>();
+        private readonly Dictionary<Guid, List<Guid>> _cachedEmbeddedStepIds = new();
         public Dictionary<Guid, List<Guid>> CachedEmbeddedStepIds => _cachedEmbeddedStepIds;
 
-        private readonly Dictionary<Guid, Stack<Pipelines.ActionStep>> _cachedEmbeddedPostSteps = new Dictionary<Guid, Stack<Pipelines.ActionStep>>();
+        private readonly Dictionary<Guid, Stack<Pipelines.ActionStep>> _cachedEmbeddedPostSteps = new();
         public Dictionary<Guid, Stack<Pipelines.ActionStep>> CachedEmbeddedPostSteps => _cachedEmbeddedPostSteps;
 
         public async Task<PrepareResult> PrepareActionsAsync(IExecutionContext executionContext, IEnumerable<Pipelines.JobStep> steps, Guid rootStepId = default(Guid))
@@ -101,38 +101,41 @@ namespace GitHub.Runner.Worker
             IEnumerable<Pipelines.ActionStep> actions = steps.OfType<Pipelines.ActionStep>();
             executionContext.Output("Prepare all required actions");
             var result = await PrepareActionsRecursiveAsync(executionContext, state, actions, depth, rootStepId);
-            if (state.ImagesToPull.Count > 0)
+            if (!FeatureManager.IsContainerHooksEnabled(executionContext.Global.Variables))
             {
-                foreach (var imageToPull in result.ImagesToPull)
+                if (state.ImagesToPull.Count > 0)
                 {
-                    Trace.Info($"{imageToPull.Value.Count} steps need to pull image '{imageToPull.Key}'");
-                    containerSetupSteps.Add(new JobExtensionRunner(runAsync: this.PullActionContainerAsync,
-                                                                   condition: $"{PipelineTemplateConstants.Success}()",
-                                                                   displayName: $"Pull {imageToPull.Key}",
-                                                                   data: new ContainerSetupInfo(imageToPull.Value, imageToPull.Key)));
+                    foreach (var imageToPull in result.ImagesToPull)
+                    {
+                        Trace.Info($"{imageToPull.Value.Count} steps need to pull image '{imageToPull.Key}'");
+                        containerSetupSteps.Add(new JobExtensionRunner(runAsync: this.PullActionContainerAsync,
+                                                                    condition: $"{PipelineTemplateConstants.Success}()",
+                                                                    displayName: $"Pull {imageToPull.Key}",
+                                                                    data: new ContainerSetupInfo(imageToPull.Value, imageToPull.Key)));
+                    }
                 }
-            }
 
-            if (result.ImagesToBuild.Count > 0)
-            {
-                foreach (var imageToBuild in result.ImagesToBuild)
+                if (result.ImagesToBuild.Count > 0)
                 {
-                    var setupInfo = result.ImagesToBuildInfo[imageToBuild.Key];
-                    Trace.Info($"{imageToBuild.Value.Count} steps need to build image from '{setupInfo.Dockerfile}'");
-                    containerSetupSteps.Add(new JobExtensionRunner(runAsync: this.BuildActionContainerAsync,
-                                                                   condition: $"{PipelineTemplateConstants.Success}()",
-                                                                   displayName: $"Build {setupInfo.ActionRepository}",
-                                                                   data: new ContainerSetupInfo(imageToBuild.Value, setupInfo.Dockerfile, setupInfo.WorkingDirectory)));
+                    foreach (var imageToBuild in result.ImagesToBuild)
+                    {
+                        var setupInfo = result.ImagesToBuildInfo[imageToBuild.Key];
+                        Trace.Info($"{imageToBuild.Value.Count} steps need to build image from '{setupInfo.Dockerfile}'");
+                        containerSetupSteps.Add(new JobExtensionRunner(runAsync: this.BuildActionContainerAsync,
+                                                                    condition: $"{PipelineTemplateConstants.Success}()",
+                                                                    displayName: $"Build {setupInfo.ActionRepository}",
+                                                                    data: new ContainerSetupInfo(imageToBuild.Value, setupInfo.Dockerfile, setupInfo.WorkingDirectory)));
+                    }
                 }
-            }
 
 #if !OS_LINUX
-            if (containerSetupSteps.Count > 0)
-            {
-                executionContext.Output("Container action is only supported on Linux, skip pull and build docker images.");
-                containerSetupSteps.Clear();
-            }
+                if (containerSetupSteps.Count > 0)
+                {
+                    executionContext.Output("Container action is only supported on Linux, skip pull and build docker images.");
+                    containerSetupSteps.Clear();
+                }
 #endif
+            }
             return new PrepareResult(containerSetupSteps, result.PreStepTracker);
         }
 
@@ -654,7 +657,7 @@ namespace GitHub.Runner.Worker
                     actionDownloadInfos = await jobServer.ResolveActionDownloadInfoAsync(executionContext.Global.Plan.ScopeIdentifier, executionContext.Global.Plan.PlanType, executionContext.Global.Plan.PlanId, executionContext.Root.Id, new WebApi.ActionReferenceList { Actions = actionReferences }, executionContext.CancellationToken);
                     break;
                 }
-                catch (Exception ex) when (!executionContext.CancellationToken.IsCancellationRequested) // Do not retry if the run is canceled.
+                catch (Exception ex) when (!executionContext.CancellationToken.IsCancellationRequested) // Do not retry if the run is cancelled.
                 {
                     // UnresolvableActionDownloadInfoException is a 422 client error, don't retry
                     // Some possible cases are:
@@ -788,7 +791,7 @@ namespace GitHub.Runner.Worker
                         try
                         {
                             //open zip stream in async mode
-                            using (FileStream fs = new FileStream(archiveFile, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: _defaultFileStreamBufferSize, useAsync: true))
+                            using (FileStream fs = new(archiveFile, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: _defaultFileStreamBufferSize, useAsync: true))
                             using (var httpClientHandler = HostContext.CreateHttpClientHandler())
                             using (var httpClient = new HttpClient(httpClientHandler))
                             {

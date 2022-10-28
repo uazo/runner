@@ -1,3 +1,4 @@
+#if !(OS_WINDOWS && ARM64)
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -22,8 +23,8 @@ namespace GitHub.Runner.Common.Tests.Listener
         private Mock<ITerminal> _term;
         private Mock<IConfigurationStore> _configStore;
         private Mock<IJobDispatcher> _jobDispatcher;
-        private AgentRefreshMessage _refreshMessage = new AgentRefreshMessage(1, "2.299.0");
-        private List<TrimmedPackageMetadata> _trimmedPackages = new List<TrimmedPackageMetadata>();
+        private AgentRefreshMessage _refreshMessage = new(1, "2.299.0");
+        private List<TrimmedPackageMetadata> _trimmedPackages = new();
 
 #if !OS_WINDOWS
         private string _packageUrl = null;
@@ -51,9 +52,9 @@ namespace GitHub.Runner.Common.Tests.Listener
                 var response = await client.SendAsync(new HttpRequestMessage(HttpMethod.Get, "https://github.com/actions/runner/releases/latest"));
                 if (response.StatusCode == System.Net.HttpStatusCode.Redirect)
                 {
-                    var redirect = await response.Content.ReadAsStringAsync();
-                    Regex regex = new Regex(@"/runner/releases/tag/v(?<version>\d+\.\d+\.\d+)");
-                    var match = regex.Match(redirect);
+                    var redirectUrl = response.Headers.Location.ToString();
+                    Regex regex = new(@"/runner/releases/tag/v(?<version>\d+\.\d+\.\d+)");
+                    var match = regex.Match(redirectUrl);
                     if (match.Success)
                     {
                         latestVersion = match.Groups["version"].Value;
@@ -63,6 +64,10 @@ namespace GitHub.Runner.Common.Tests.Listener
 #else
                         _packageUrl = $"https://github.com/actions/runner/releases/download/v{latestVersion}/actions-runner-{BuildConstants.RunnerPackage.PackageName}-{latestVersion}.zip";
 #endif
+                    }
+                    else
+                    {
+                        throw new Exception("The latest runner version could not be determined so a download URL could not be generated for it. Please check the location header of the redirect response of 'https://github.com/actions/runner/releases/latest'");
                     }
                 }
             }
@@ -793,3 +798,4 @@ namespace GitHub.Runner.Common.Tests.Listener
     }
 #endif
 }
+#endif

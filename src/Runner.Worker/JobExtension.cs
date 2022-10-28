@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -7,8 +7,8 @@ using System.Linq;
 using System.Runtime.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using GitHub.DistributedTask.Expressions2;
 using GitHub.DistributedTask.ObjectTemplating.Tokens;
+using GitHub.DistributedTask.Pipelines;
 using GitHub.DistributedTask.Pipelines.ContextData;
 using GitHub.DistributedTask.Pipelines.ObjectTemplating;
 using GitHub.DistributedTask.WebApi;
@@ -39,10 +39,10 @@ namespace GitHub.Runner.Worker
 
     public sealed class JobExtension : RunnerService, IJobExtension
     {
-        private readonly HashSet<string> _existingProcesses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _existingProcesses = new(StringComparer.OrdinalIgnoreCase);
         private bool _processCleanup;
         private string _processLookupId = $"github_{Guid.NewGuid()}";
-        private CancellationTokenSource _diskSpaceCheckToken = new CancellationTokenSource();
+        private CancellationTokenSource _diskSpaceCheckToken = new();
         private Task _diskSpaceCheckTask = null;
 
         // Download all required actions.
@@ -59,8 +59,8 @@ namespace GitHub.Runner.Worker
             context.StepTelemetry.Type = "runner";
             context.StepTelemetry.Action = "setup_job";
 
-            List<IStep> preJobSteps = new List<IStep>();
-            List<IStep> jobSteps = new List<IStep>();
+            List<IStep> preJobSteps = new();
+            List<IStep> jobSteps = new();
             using (var register = jobContext.CancellationToken.Register(() => { context.CancelToken(); }))
             {
                 try
@@ -205,6 +205,7 @@ namespace GitHub.Runner.Worker
                     // Evaluate the job container
                     context.Debug("Evaluating job container");
                     var container = templateEvaluator.EvaluateJobContainer(message.JobContainer, jobContext.ExpressionValues, jobContext.ExpressionFunctions);
+                    ValidateJobContainer(container);
                     if (container != null)
                     {
                         jobContext.Global.Container = new Container.ContainerInfo(HostContext, container);
@@ -248,6 +249,19 @@ namespace GitHub.Runner.Worker
                     Trace.Info("Downloading actions");
                     var actionManager = HostContext.GetService<IActionManager>();
                     var prepareResult = await actionManager.PrepareActionsAsync(context, message.Steps);
+
+                    // add hook to preJobSteps
+                    var startedHookPath = Environment.GetEnvironmentVariable("ACTIONS_RUNNER_HOOK_JOB_STARTED");
+                    if (!string.IsNullOrEmpty(startedHookPath))
+                    {
+                        var hookProvider = HostContext.GetService<IJobHookProvider>();
+                        var jobHookData = new JobHookData(ActionRunStage.Pre, startedHookPath);
+                        preJobSteps.Add(new JobExtensionRunner(runAsync: hookProvider.RunHook,
+                                                                          condition: $"{PipelineTemplateConstants.Always}()",
+                                                                          displayName: Constants.Hooks.JobStartedStepName,
+                                                                          data: (object)jobHookData));
+                    }
+
                     preJobSteps.AddRange(prepareResult.ContainerSetupSteps);
 
                     // Add start-container steps, record and stop-container steps
@@ -300,6 +314,29 @@ namespace GitHub.Runner.Worker
                         }
                     }
 
+                    if (message.Variables.TryGetValue("system.workflowFileFullPath", out VariableValue workflowFileFullPath))
+                    {
+                        context.Output($"Uses: {workflowFileFullPath.Value}");
+                        if (message.ContextData.TryGetValue("inputs", out var pipelineContextData))
+                        {
+                            var inputs = pipelineContextData.AssertDictionary("inputs");
+                            if (inputs.Any()) 
+                            {
+                                context.Output($"##[group] Inputs");
+                                foreach (var input in inputs) 
+                                {
+                                    context.Output($"  {input.Key}: {input.Value}");
+                                }
+                                context.Output("##[endgroup]");
+                            }
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(message.JobDisplayName)) 
+                        {
+                            context.Output($"Complete job name: {message.JobDisplayName}");
+                        }
+                    }
+
                     var intraActionStates = new Dictionary<Guid, Dictionary<string, string>>();
                     foreach (var preStep in prepareResult.PreStepTracker)
                     {
@@ -337,7 +374,19 @@ namespace GitHub.Runner.Worker
                         }
                     }
 
-                    List<IStep> steps = new List<IStep>();
+                    // Register Job Completed hook if the variable is set
+                    var completedHookPath = Environment.GetEnvironmentVariable("ACTIONS_RUNNER_HOOK_JOB_COMPLETED");
+                    if (!string.IsNullOrEmpty(completedHookPath))
+                    {
+                        var hookProvider = HostContext.GetService<IJobHookProvider>();
+                        var jobHookData = new JobHookData(ActionRunStage.Post, completedHookPath);
+                        jobContext.RegisterPostJobStep(new JobExtensionRunner(runAsync: hookProvider.RunHook,
+                                                                          condition: $"{PipelineTemplateConstants.Always}()",
+                                                                          displayName: Constants.Hooks.JobCompletedStepName,
+                                                                          data: (object)jobHookData));
+                    }
+
+                    List<IStep> steps = new();
                     steps.AddRange(preJobSteps);
                     steps.AddRange(jobSteps);
 
@@ -406,7 +455,7 @@ namespace GitHub.Runner.Worker
             // create a new timeline record node for 'Finalize job'
             IExecutionContext context = jobContext.CreateChild(Guid.NewGuid(), "Complete job", $"{nameof(JobExtension)}_Final", null, null, ActionRunStage.Post);
             context.StepTelemetry.Type = "runner";
-            context.StepTelemetry.Action = "complete_joh";
+            context.StepTelemetry.Action = "complete_job";
             using (var register = jobContext.CancellationToken.Register(() => { context.CancelToken(); }))
             {
                 try
@@ -625,7 +674,7 @@ namespace GitHub.Runner.Worker
 
         private Dictionary<int, Process> SnapshotProcesses()
         {
-            Dictionary<int, Process> snapshot = new Dictionary<int, Process>();
+            Dictionary<int, Process> snapshot = new();
             foreach (var proc in Process.GetProcesses())
             {
                 try
@@ -645,6 +694,14 @@ namespace GitHub.Runner.Worker
 
             Trace.Info($"Total accessible running process: {snapshot.Count}.");
             return snapshot;
+        }
+
+        private static void ValidateJobContainer(JobContainer container)
+        {
+            if (StringUtil.ConvertToBoolean(Environment.GetEnvironmentVariable(Constants.Variables.Actions.RequireJobContainer)) && container == null)
+            {
+                throw new ArgumentException("Jobs without a job container are forbidden on this runner, please add a 'container:' to your job or contact your self-hosted runner administrator.");
+            }
         }
     }
 }

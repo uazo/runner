@@ -28,23 +28,6 @@ namespace GitHub.Runner.Common.Tests.Worker
         [Fact]
         [Trait("Level", "L0")]
         [Trait("Category", "Worker")]
-        public void CreateStepSummaryCommand_FeatureDisabled()
-        {
-            using (var hostContext = Setup(featureFlagState: "false"))
-            {
-                var stepSummaryFile = Path.Combine(_rootDirectory, "feature-off");
-                
-                _createStepCommand.ProcessCommand(_executionContext.Object, stepSummaryFile, null);
-                _jobExecutionContext.Complete();
-
-                _jobServerQueue.Verify(x => x.QueueFileUpload(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>()), Times.Never());
-                Assert.Equal(0, _issues.Count);
-            }
-        }
-
-        [Fact]
-        [Trait("Level", "L0")]
-        [Trait("Category", "Worker")]
         public void CreateStepSummaryCommand_FileNull()
         {
             using (var hostContext = Setup())
@@ -117,7 +100,7 @@ namespace GitHub.Runner.Common.Tests.Worker
             using (var hostContext = Setup())
             {
                 var stepSummaryFile = Path.Combine(_rootDirectory, "empty-file");
-                File.WriteAllBytes(stepSummaryFile, new byte[128 * 1024 + 1]);
+                File.WriteAllBytes(stepSummaryFile, new byte[CreateStepSummaryCommand.AttachmentSizeLimit + 1]);
 
                 _createStepCommand.ProcessCommand(_executionContext.Object, stepSummaryFile, null);
                 _jobExecutionContext.Complete();
@@ -199,15 +182,15 @@ namespace GitHub.Runner.Common.Tests.Worker
             File.WriteAllText(path, contentStr, encoding);
         }
 
-        private TestHostContext Setup([CallerMemberName] string name = "", string featureFlagState = "true")
+        private TestHostContext Setup([CallerMemberName] string name = "")
         {
             var hostContext = new TestHostContext(this, name);
 
             _issues = new List<Tuple<DTWebApi.Issue, string>>();
 
             // Setup a job request
-            TaskOrchestrationPlanReference plan = new TaskOrchestrationPlanReference();
-            TimelineReference timeline = new TimelineReference();
+            TaskOrchestrationPlanReference plan = new();
+            TimelineReference timeline = new();
             Guid jobId = Guid.NewGuid();
             string jobName = "Summary Job";
             var jobRequest = new Pipelines.AgentJobRequestMessage(plan, timeline, jobId, jobName, jobName, null, null, null, new Dictionary<string, VariableValue>(), new List<MaskHint>(), new Pipelines.JobResources(), new Pipelines.ContextData.DictionaryContextData(), new Pipelines.WorkspaceOptions(), new List<Pipelines.ActionStep>(), null, null, null, null);
@@ -241,7 +224,6 @@ namespace GitHub.Runner.Common.Tests.Worker
             _variables = new Variables(hostContext, new Dictionary<string, VariableValue>
                 {
                     { "MySecretName", new VariableValue("My secret value", true) },
-                    { "DistributedTask.UploadStepSummary", featureFlagState },
                 });
 
             // Directory for test data

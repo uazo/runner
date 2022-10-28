@@ -15,7 +15,7 @@ Make sure the runner has access to actions service for GitHub.com or GitHub Ente
     ```
     curl -v https://api.github.com/api/v3/zen
     curl -v https://vstoken.actions.githubusercontent.com/_apis/health
-    curl -v https://pipelines.actions.githubusercontent/_apis/health
+    curl -v https://pipelines.actions.githubusercontent.com/_apis/health
     ```
 
 - For GitHub Enterprise Server
@@ -64,4 +64,4 @@ Make sure the runner has access to actions service for GitHub.com or GitHub Ente
   
 ## Still not working?
 
-Contact [GitHub Support](https://support.github.com] if you have further questuons, or log an issue at https://github.com/actions/runner if you think it's a runner issue.
+Contact [GitHub Support](https://support.github.com) if you have further questuons, or log an issue at https://github.com/actions/runner if you think it's a runner issue.

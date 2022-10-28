@@ -10,7 +10,7 @@ on:
     - '**.md'
   pull_request:
     branches:
-    - '*'
+    - '**'
     paths-ignore:
     - '**.md'
 
@@ -26,7 +26,7 @@ jobs:
 
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     # Build runner layout
     - name: Build & Layout Release
@@ -62,7 +62,7 @@ jobs:
       run: |
         ${{ matrix.devScript }} test
       working-directory: src
-      if: matrix.runtime != 'linux-arm64' && matrix.runtime != 'linux-arm'
+      if: matrix.runtime != 'linux-arm64' && matrix.runtime != 'linux-arm' && matrix.runtime != 'osx-arm64' && matrix.runtime != 'win-arm64'
 
     # Create runner package tar.gz/zip
     - name: Package Release
@@ -77,7 +77,7 @@ jobs:
       uses: actions/upload-artifact@v2
       with:
         name: runner-package-${{ matrix.runtime }}
-        path: | 
+        path: |
           _package
           _package_trims/trim_externals
           _package_trims/trim_runtime
