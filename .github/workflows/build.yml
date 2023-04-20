@@ -61,7 +61,7 @@ jobs:
     # Run tests
     - name: L0
       run: |
-        ${{ matrix.devScript }} test
+        bash ${{ matrix.devScript }} test
       working-directory: src
       if: matrix.runtime != 'linux-arm64' && matrix.runtime != 'linux-arm' && matrix.runtime != 'osx-arm64' && matrix.runtime != 'win-arm64'
 
@@ -69,7 +69,7 @@ jobs:
     - name: Package Release
       if: github.event_name != 'pull_request'
       run: |
-        ${{ matrix.devScript }} package Release
+        bash ${{ matrix.devScript }} package Release
       working-directory: src
 
     # Upload runner package tar.gz/zip as artifact
