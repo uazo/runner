@@ -31,7 +31,7 @@ jobs:
     # Build runner layout
     - name: Build & Layout Release
       run: |
-        ${{ matrix.devScript }} layout Release ${{ matrix.runtime }}
+        bash ${{ matrix.devScript }} layout Release ${{ matrix.runtime }}
       working-directory: src
 
     # Check runtime/externals hash
