@@ -113,14 +113,14 @@ jobs:
     # Build runner layout
     - name: Build & Layout Release
       run: |
-        ${{ matrix.devScript }} layout Release ${{ matrix.runtime }}
+        bash ${{ matrix.devScript }} layout Release ${{ matrix.runtime }}
       working-directory: src
 
     # Create runner package tar.gz/zip
     - name: Package Release
       if: github.event_name != 'pull_request'
       run: |
-        ${{ matrix.devScript }} package Release ${{ matrix.runtime }}
+        bash ${{ matrix.devScript }} package Release ${{ matrix.runtime }}
       working-directory: src
 
     # compute shas and set as job outputs to use in release notes
