@@ -14,7 +14,7 @@ namespace GitHub.Runner.Common
         private bool _traceToConsole;
 
         public Tracing(string name, ISecretMasker secretMasker, SourceSwitch sourceSwitch, HostTraceListener traceListener,
-          bool traceToConsole)
+          bool traceToConsole, StdoutTraceListener stdoutTraceListener = null)
         {
             ArgUtil.NotNull(secretMasker, nameof(secretMasker));
             _secretMasker = secretMasker;
@@ -30,6 +30,10 @@ namespace GitHub.Runner.Common
             }
 
             _traceSource.Listeners.Add(traceListener);
+            if (stdoutTraceListener != null)
+            {
+                _traceSource.Listeners.Add(stdoutTraceListener);
+            }
         }
 
         public void Info(string message)

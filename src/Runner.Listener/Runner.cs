@@ -4,11 +4,13 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using GitHub.DistributedTask.WebApi;
 using GitHub.Runner.Common;
+using GitHub.Runner.Common.Util;
 using GitHub.Runner.Listener.Check;
 using GitHub.Runner.Listener.Configuration;
 using GitHub.Runner.Sdk;
@@ -135,6 +137,12 @@ namespace GitHub.Runner.Listener
                 // remove config files, remove service, and exit
                 if (command.Remove)
                 {
+                    // only remove local config files and exit
+                    if (command.RemoveLocalConfig)
+                    {
+                        configManager.DeleteLocalRunnerConfig();
+                        return Constants.Runner.ReturnCode.Success;
+                    }
                     try
                     {
                         await configManager.UnconfigureAsync(command);
@@ -203,10 +211,16 @@ namespace GitHub.Runner.Listener
                         foreach (var config in jitConfig)
                         {
                             var configFile = Path.Combine(HostContext.GetDirectory(WellKnownDirectory.Root), config.Key);
-                            var configContent = Encoding.UTF8.GetString(Convert.FromBase64String(config.Value));
-                            File.WriteAllText(configFile, configContent, Encoding.UTF8);
+                            var configContent = Convert.FromBase64String(config.Value);
+#if OS_WINDOWS
+                            if (configFile == HostContext.GetConfigFile(WellKnownConfigFile.RSACredentials))
+                            {
+                                configContent = ProtectedData.Protect(configContent, null, DataProtectionScope.LocalMachine);
+                            }
+#endif
+                            File.WriteAllBytes(configFile, configContent);
                             File.SetAttributes(configFile, File.GetAttributes(configFile) | FileAttributes.Hidden);
-                            Trace.Info($"Save {configContent.Length} chars to '{configFile}'.");
+                            Trace.Info($"Saved {configContent.Length} bytes to '{configFile}'.");
                         }
                     }
                     catch (Exception ex)
@@ -325,13 +339,26 @@ namespace GitHub.Runner.Listener
             }
         }
 
+        private IMessageListener GetMesageListener(RunnerSettings settings)
+        {
+            if (settings.UseV2Flow)
+            {
+                Trace.Info($"Using BrokerMessageListener");
+                var brokerListener = new BrokerMessageListener();
+                brokerListener.Initialize(HostContext);
+                return brokerListener;
+            }
+
+            return HostContext.GetService<IMessageListener>();
+        }
+
         //create worker manager, create message listener and start listening to the queue
         private async Task<int> RunAsync(RunnerSettings settings, bool runOnce = false)
         {
             try
             {
                 Trace.Info(nameof(RunAsync));
-                _listener = HostContext.GetService<IMessageListener>();
+                _listener = GetMesageListener(settings);
                 if (!await _listener.CreateSessionAsync(HostContext.RunnerShutdownToken))
                 {
                     return Constants.Runner.ReturnCode.TerminatedError;
@@ -430,12 +457,22 @@ namespace GitHub.Runner.Listener
 
                             message = await getNextMessage; //get next message
                             HostContext.WritePerfCounter($"MessageReceived_{message.MessageType}");
-                            if (string.Equals(message.MessageType, AgentRefreshMessage.MessageType, StringComparison.OrdinalIgnoreCase))
+                            if (string.Equals(message.MessageType, AgentRefreshMessage.MessageType, StringComparison.OrdinalIgnoreCase) ||
+                                string.Equals(message.MessageType, RunnerRefreshMessage.MessageType, StringComparison.OrdinalIgnoreCase))
                             {
                                 if (autoUpdateInProgress == false)
                                 {
                                     autoUpdateInProgress = true;
-                                    var runnerUpdateMessage = JsonUtility.FromString<AgentRefreshMessage>(message.Body);
+                                    AgentRefreshMessage runnerUpdateMessage = null;
+                                    if (string.Equals(message.MessageType, AgentRefreshMessage.MessageType, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        runnerUpdateMessage = JsonUtility.FromString<AgentRefreshMessage>(message.Body);
+                                    }
+                                    else
+                                    {
+                                        var brokerRunnerUpdateMessage = JsonUtility.FromString<RunnerRefreshMessage>(message.Body);
+                                        runnerUpdateMessage = new AgentRefreshMessage(brokerRunnerUpdateMessage.RunnerId, brokerRunnerUpdateMessage.TargetVersion, TimeSpan.FromSeconds(brokerRunnerUpdateMessage.TimeoutInSeconds));
+                                    }
 #if DEBUG
                                     // Can mock the update for testing
                                     if (StringUtil.ConvertToBoolean(Environment.GetEnvironmentVariable("GITHUB_ACTIONS_RUNNER_IS_MOCK_UPDATE")))
@@ -486,7 +523,7 @@ namespace GitHub.Runner.Listener
                                 }
                             }
                             // Broker flow
-                            else if (string.Equals(message.MessageType, JobRequestMessageTypes.RunnerJobRequest, StringComparison.OrdinalIgnoreCase))
+                            else if (MessageUtil.IsRunServiceJob(message.MessageType))
                             {
                                 if (autoUpdateInProgress || runOnceJobReceived)
                                 {
@@ -637,6 +674,7 @@ Config Options:
  --name string          Name of the runner to configure (default {Environment.MachineName ?? "myrunner"})
  --runnergroup string   Name of the runner group to add this runner to (defaults to the default runner group)
  --labels string        Extra labels in addition to the default: 'self-hosted,{Constants.Runner.Platform},{Constants.Runner.PlatformArchitecture}'
+ --local                Removes the runner config files from your local machine. Used as an option to the remove command
  --work string          Relative runner work directory (default {Constants.Path.WorkDirectory})
  --replace              Replace any existing runner with the same name (default false)
  --pat                  GitHub personal access token with repo scope. Used for checking network connectivity when executing `.{separator}run.{ext} --check`

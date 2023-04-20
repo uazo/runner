@@ -222,6 +222,9 @@
     },
 
     "job-outputs": {
+      "context": [
+        "matrix"
+      ],
       "mapping": {
         "loose-key-type": "non-empty-string",
         "loose-value-type": "string-runner-context"
@@ -381,7 +384,7 @@
     "container-mapping": {
       "mapping": {
         "properties": {
-          "image": "non-empty-string",
+          "image": "string",
           "options": "non-empty-string",
           "env": "container-env",
           "ports": "sequence-of-non-empty-string",
@@ -414,7 +417,7 @@
         "vars"
       ],
       "one-of": [
-        "non-empty-string",
+        "string",
         "container-mapping"
       ]
     },

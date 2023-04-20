@@ -182,7 +182,7 @@ namespace GitHub.Runner.Listener
                 try
                 {
                     _getMessagesTokenSource?.Cancel();
-                } 
+                }
                 catch (ObjectDisposedException)
                 {
                     Trace.Info("_getMessagesTokenSource is already disposed.");
@@ -211,6 +211,7 @@ namespace GitHub.Runner.Listener
                                                                 _session.SessionId,
                                                                 _lastMessageId,
                                                                 runnerStatus,
+                                                                BuildConstants.RunnerPackage.Version,
                                                                 _getMessagesTokenSource.Token);
 
                     // Decrypt the message body if the session is using encryption
@@ -242,6 +243,10 @@ namespace GitHub.Runner.Listener
                 {
                     Trace.Info("Runner OAuth token has been revoked. Unable to pull message.");
                     _accessTokenRevoked = true;
+                    throw;
+                }
+                catch (AccessDeniedException e) when (e.InnerException is InvalidTaskAgentVersionException)
+                {
                     throw;
                 }
                 catch (Exception ex)
@@ -288,7 +293,7 @@ namespace GitHub.Runner.Listener
                         await HostContext.Delay(_getNextMessageRetryInterval, token);
                     }
                 }
-                finally 
+                finally
                 {
                     _getMessagesTokenSource.Dispose();
                 }
