@@ -80,23 +80,23 @@ jobs:
         include:
         - runtime: linux-x64
           os: ubuntu-latest
-          devScript: ./dev.sh
+          devScript: bash ./dev.sh
 
         - runtime: linux-arm64
           os: ubuntu-latest
-          devScript: ./dev.sh
+          devScript: bash ./dev.sh
 
         - runtime: linux-arm
           os: ubuntu-latest
-          devScript: ./dev.sh
+          devScript: bash ./dev.sh
 
         - runtime: osx-x64
           os: macOS-latest
-          devScript: ./dev.sh
+          devScript: bash ./dev.sh
 
         - runtime: osx-arm64
           os: macOS-latest
-          devScript: ./dev.sh
+          devScript: bash ./dev.sh
 
         - runtime: win-x64
           os: windows-2019
@@ -113,14 +113,14 @@ jobs:
     # Build runner layout
     - name: Build & Layout Release
       run: |
-        bash ${{ matrix.devScript }} layout Release ${{ matrix.runtime }}
+        ${{ matrix.devScript }} layout Release ${{ matrix.runtime }}
       working-directory: src
 
     # Create runner package tar.gz/zip
     - name: Package Release
       if: github.event_name != 'pull_request'
       run: |
-        bash ${{ matrix.devScript }} package Release ${{ matrix.runtime }}
+        ${{ matrix.devScript }} package Release ${{ matrix.runtime }}
       working-directory: src
 
     # compute shas and set as job outputs to use in release notes
