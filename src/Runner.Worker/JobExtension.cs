@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -431,14 +431,6 @@ namespace GitHub.Runner.Worker
                     context.Result = TaskResult.Canceled;
                     throw;
                 }
-                catch (FailedToResolveActionDownloadInfoException ex)
-                {
-                    // Log the error and fail the JobExtension Initialization.
-                    Trace.Error($"Caught exception from JobExtenion Initialization: {ex}");
-                    context.InfrastructureError(ex.Message);
-                    context.Result = TaskResult.Failed;
-                    throw;
-                }
                 catch (Exception ex)
                 {
                     // Log the error and fail the JobExtension Initialization.
@@ -683,7 +675,7 @@ namespace GitHub.Runner.Worker
                 {
                     var issue = new Issue() { Type = IssueType.Warning, Message = $"You are running out of disk space. The runner will stop working when the machine runs out of disk space. Free space left: {freeSpaceInMB} MB" };
                     issue.Data[Constants.Runner.InternalTelemetryIssueDataKey] = Constants.Runner.LowDiskSpace;
-                    context.AddIssue(issue);
+                    context.AddIssue(issue, ExecutionContextLogOptions.Default);
                     return;
                 }
 

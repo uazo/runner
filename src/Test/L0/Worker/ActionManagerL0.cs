@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
@@ -29,6 +29,7 @@ namespace GitHub.Runner.Common.Tests.Worker
         private Mock<IDockerCommandManager> _dockerManager;
         private Mock<IExecutionContext> _ec;
         private Mock<IJobServer> _jobServer;
+        private Mock<ILaunchServer> _launchServer;
         private Mock<IRunnerPluginManager> _pluginManager;
         private TestHostContext _hc;
         private ActionManager _actionManager;
@@ -1111,7 +1112,7 @@ namespace GitHub.Runner.Common.Tests.Worker
                 };
 
                 //Act
-                var result =  await _actionManager.PrepareActionsAsync(_ec.Object, actions);
+                var result = await _actionManager.PrepareActionsAsync(_ec.Object, actions);
 
                 //Assert
                 Assert.Equal(2, result.ContainerSetupSteps.Count);
@@ -2254,7 +2255,7 @@ runs:
             _ec.Object.Global.FileTable = new List<String>();
             _ec.Object.Global.Plan = new TaskOrchestrationPlanReference();
             _ec.Setup(x => x.Write(It.IsAny<string>(), It.IsAny<string>())).Callback((string tag, string message) => { _hc.GetTrace().Info($"[{tag}]{message}"); });
-            _ec.Setup(x => x.AddIssue(It.IsAny<Issue>(), It.IsAny<string>())).Callback((Issue issue, string message) => { _hc.GetTrace().Info($"[{issue.Type}]{issue.Message ?? message}"); });
+            _ec.Setup(x => x.AddIssue(It.IsAny<Issue>(), It.IsAny<ExecutionContextLogOptions>())).Callback((Issue issue, ExecutionContextLogOptions logOptions) => { _hc.GetTrace().Info($"[{issue.Type}]{logOptions.LogMessageOverride ?? issue.Message}"); });
             _ec.Setup(x => x.GetGitHubContext("workspace")).Returns(Path.Combine(_workFolder, "actions", "actions"));
 
             _dockerManager = new Mock<IDockerCommandManager>();
@@ -2282,6 +2283,25 @@ runs:
                     return Task.FromResult(result);
                 });
 
+            _launchServer = new Mock<ILaunchServer>();
+            _launchServer.Setup(x => x.ResolveActionsDownloadInfoAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<ActionReferenceList>(), It.IsAny<CancellationToken>()))
+                .Returns((Guid planId, Guid jobId, ActionReferenceList actions, CancellationToken cancellationToken) =>
+                {
+                    var result = new ActionDownloadInfoCollection { Actions = new Dictionary<string, ActionDownloadInfo>() };
+                    foreach (var action in actions.Actions)
+                    {
+                        var key = $"{action.NameWithOwner}@{action.Ref}";
+                        result.Actions[key] = new ActionDownloadInfo
+                        {
+                            NameWithOwner = action.NameWithOwner,
+                            Ref = action.Ref,
+                            TarballUrl = $"https://api.github.com/repos/{action.NameWithOwner}/tarball/{action.Ref}",
+                            ZipballUrl = $"https://api.github.com/repos/{action.NameWithOwner}/zipball/{action.Ref}",
+                        };
+                    }
+                    return Task.FromResult(result);
+                });
+
             _pluginManager = new Mock<IRunnerPluginManager>();
             _pluginManager.Setup(x => x.GetPluginAction(It.IsAny<string>())).Returns(new RunnerPluginActionInfo() { PluginTypeName = "plugin.class, plugin", PostPluginTypeName = "plugin.cleanup, plugin" });
 
@@ -2290,6 +2310,7 @@ runs:
 
             _hc.SetSingleton<IDockerCommandManager>(_dockerManager.Object);
             _hc.SetSingleton<IJobServer>(_jobServer.Object);
+            _hc.SetSingleton<ILaunchServer>(_launchServer.Object);
             _hc.SetSingleton<IRunnerPluginManager>(_pluginManager.Object);
             _hc.SetSingleton<IActionManifestManager>(actionManifest);
             _hc.SetSingleton<IHttpClientHandlerFactory>(new HttpClientHandlerFactory());

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -294,7 +294,7 @@ namespace GitHub.Runner.Worker.Handlers
                     // Evaluation error
                     Trace.Info("Caught exception from expression for embedded step.env");
                     step.ExecutionContext.Error(ex);
-                    step.ExecutionContext.Complete(TaskResult.Failed);
+                    SetStepConclusion(step, TaskResult.Failed);
                 }
 
                 // Register Callback

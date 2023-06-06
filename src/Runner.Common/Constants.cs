@@ -133,6 +133,7 @@ namespace GitHub.Runner.Common
                     public static readonly string GenerateServiceConfig = "generateServiceConfig";
                     public static readonly string Help = "help";
                     public static readonly string Local = "local";
+                    public static readonly string NoDefaultLabels = "no-default-labels";
                     public static readonly string Replace = "replace";
                     public static readonly string DisableUpdate = "disableupdate";
                     public static readonly string Once = "once"; // Keep this around since customers still relies on it
@@ -262,6 +263,8 @@ namespace GitHub.Runner.Common
                 public static readonly string AccessToken = "system.accessToken";
                 public static readonly string Culture = "system.culture";
                 public static readonly string PhaseDisplayName = "system.phaseDisplayName";
+                public static readonly string JobRequestType = "system.jobRequestType";
+                public static readonly string OrchestrationId = "system.orchestrationId";
             }
         }
 

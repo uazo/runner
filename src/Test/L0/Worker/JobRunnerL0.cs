@@ -1,4 +1,4 @@
-using GitHub.DistributedTask.WebApi;
+﻿using GitHub.DistributedTask.WebApi;
 using GitHub.Runner.Worker;
 using Moq;
 using System;
@@ -123,42 +123,42 @@ namespace GitHub.Runner.Common.Tests.Worker
       return hc;
     }
 
-    private Pipelines.AgentJobRequestMessage GetMessage(String messageType = JobRequestMessageTypes.PipelineAgentJobRequest, [CallerMemberName] String testName = "")
-    {
-      TaskOrchestrationPlanReference plan = new();
-      TimelineReference timeline = new Timeline(Guid.NewGuid());
-      Guid jobId = Guid.NewGuid();
-      var message = new Pipelines.AgentJobRequestMessage(
-          plan,
-          timeline,
-          jobId,
-          testName,
-          testName, null, null, null, new Dictionary<string, VariableValue>(), new List<MaskHint>(), new Pipelines.JobResources(), new Pipelines.ContextData.DictionaryContextData(), new Pipelines.WorkspaceOptions(), new List<Pipelines.ActionStep>(), null, null, null, null,
-          messageType: messageType);
-      message.Variables[Constants.Variables.System.Culture] = "en-US";
-      message.Resources.Endpoints.Add(new ServiceEndpoint()
-      {
-        Name = WellKnownServiceEndpointNames.SystemVssConnection,
-        Url = new Uri("https://pipelines.actions.githubusercontent.com"),
-        Authorization = new EndpointAuthorization()
-        {
-          Scheme = "Test",
-          Parameters = {
-                        {"AccessToken", "token"}
-                    }
-        },
+		private Pipelines.AgentJobRequestMessage GetMessage(String messageType = JobRequestMessageTypes.PipelineAgentJobRequest, [CallerMemberName] String testName = "")
+		{
+			TaskOrchestrationPlanReference plan = new();
+			TimelineReference timeline = new Timeline(Guid.NewGuid());
+			Guid jobId = Guid.NewGuid();
+			var message = new Pipelines.AgentJobRequestMessage(
+					plan,
+					timeline,
+					jobId,
+					testName,
+					testName, null, null, null, new Dictionary<string, VariableValue>(), new List<MaskHint>(), new Pipelines.JobResources(), new Pipelines.ContextData.DictionaryContextData(), new Pipelines.WorkspaceOptions(), new List<Pipelines.ActionStep>(), null, null, null, null,
+					messageType: messageType);
+			message.Variables[Constants.Variables.System.Culture] = "en-US";
+			message.Resources.Endpoints.Add(new ServiceEndpoint()
+			{
+				Name = WellKnownServiceEndpointNames.SystemVssConnection,
+				Url = new Uri("https://pipelines.actions.githubusercontent.com"),
+				Authorization = new EndpointAuthorization()
+				{
+					Scheme = "Test",
+					Parameters = {
+												{"AccessToken", "token"}
+										}
+				},
 
-      });
+			});
 
-      message.Resources.Repositories.Add(new Pipelines.RepositoryResource()
-      {
-        Alias = Pipelines.PipelineConstants.SelfAlias,
-        Id = "github",
-        Version = "sha1"
-      });
-      message.ContextData.Add("github", new Pipelines.ContextData.DictionaryContextData());
-      return message;
-    }
+			message.Resources.Repositories.Add(new Pipelines.RepositoryResource()
+			{
+				Alias = Pipelines.PipelineConstants.SelfAlias,
+				Id = "github",
+				Version = "sha1"
+			});
+			message.ContextData.Add("github", new Pipelines.ContextData.DictionaryContextData());
+			return message;
+		}
 
     [Fact]
     [Trait("Level", "L0")]
@@ -195,75 +195,89 @@ namespace GitHub.Runner.Common.Tests.Worker
       }
     }
 
-
-    [Fact]
-    [Trait("Level", "L0")]
-    [Trait("Category", "Worker")]
-    public async Task JobExtensionInitializeNotAllowed_WithoutConfig()
-    {
-      using (TestHostContext hc = CreateTestContext())
-      {
-        await _jobRunner.RunAsync(_message, _tokenSource.Token);
-
-        Assert.Equal(TaskResult.Failed, _jobEc.Result);
-        _stepRunner.Verify(x => x.RunAsync(It.IsAny<IExecutionContext>()), Times.Never);
-      }
-    }
-
-    [Fact]
-    [Trait("Level", "L0")]
-    [Trait("Category", "Worker")]
-    public async Task JobExtensionInitializeNotAllowed_WithoutActor()
-    {
-      using (TestHostContext hc = CreateTestContext(
-        overrideSettings: x => x.RequestSecuritySettings = new RequestSecuritySettings()
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", "Worker")]
+        public async Task WorksWithRunnerJobRequestMessageType()
         {
-          AllowedAuthors = new HashSet<string>() { "allowed-author" }
-        }))
-      {
-        await _jobRunner.RunAsync(_message, _tokenSource.Token);
+            using (TestHostContext hc = CreateTestContext())
+            {
+                var message = GetMessage(JobRequestMessageTypes.RunnerJobRequest);
+                await _jobRunner.RunAsync(message, _tokenSource.Token);
+                Assert.Equal(TaskResult.Succeeded, _jobEc.Result);
+            }
+        }
 
-        Assert.Equal(TaskResult.Failed, _jobEc.Result);
-        _stepRunner.Verify(x => x.RunAsync(It.IsAny<IExecutionContext>()), Times.Never);
-      }
-    }
+		[Fact]
+		[Trait("Level", "L0")]
+		[Trait("Category", "Worker")]
+		public async Task JobExtensionInitializeNotAllowed_WithoutConfig()
+		{
+			using (TestHostContext hc = CreateTestContext())
+			{
+				await _jobRunner.RunAsync(_message, _tokenSource.Token);
 
-    [Fact]
-    [Trait("Level", "L0")]
-    [Trait("Category", "Worker")]
-    public async Task JobExtensionInitializeNotAllowed_ActorNotAllowed()
-    {
-      using (TestHostContext hc = CreateTestContext(
-        overrideSettings: x => x.RequestSecuritySettings = new RequestSecuritySettings()
-        {
-          AllowedAuthors = new HashSet<string>() { "allowed-author" }
-        },
-        Actor: "noallowed-author"))
-      {
-        await _jobRunner.RunAsync(_message, _tokenSource.Token);
+				Assert.Equal(TaskResult.Failed, _jobEc.Result);
+				_stepRunner.Verify(x => x.RunAsync(It.IsAny<IExecutionContext>()), Times.Never);
+			}
+		}
 
-        Assert.Equal(TaskResult.Failed, _jobEc.Result);
-        _stepRunner.Verify(x => x.RunAsync(It.IsAny<IExecutionContext>()), Times.Never);
-      }
-    }
+		[Fact]
+		[Trait("Level", "L0")]
+		[Trait("Category", "Worker")]
+		public async Task JobExtensionInitializeNotAllowed_WithoutActor()
+		{
+			using (TestHostContext hc = CreateTestContext(
+				overrideSettings: x => x.RequestSecuritySettings = new RequestSecuritySettings()
+				{
+					AllowedAuthors = new HashSet<string>() { "allowed-author" }
+				}))
+			{
+				await _jobRunner.RunAsync(_message, _tokenSource.Token);
 
-    [Fact]
-    [Trait("Level", "L0")]
-    [Trait("Category", "Worker")]
-    public async Task JobExtensionInitializeNotAllowed_ActorAllowed()
-    {
-      using (TestHostContext hc = CreateTestContext(
-        overrideSettings: x => x.RequestSecuritySettings = new RequestSecuritySettings()
-        {
-          AllowedAuthors = new HashSet<string>() { "allowed-author" }
-        },
-        Actor: "allowed-author"))
-      {
-        await _jobRunner.RunAsync(_message, _tokenSource.Token);
+				Assert.Equal(TaskResult.Failed, _jobEc.Result);
+				_stepRunner.Verify(x => x.RunAsync(It.IsAny<IExecutionContext>()), Times.Never);
+			}
+		}
 
-        Assert.Equal(TaskResult.Succeeded, _jobEc.Result);
-        _stepRunner.Verify(x => x.RunAsync(It.IsAny<IExecutionContext>()), Times.Once);
-      }
-    }
-  }
+		////////// UAZO
+		[Fact]
+		[Trait("Level", "L0")]
+		[Trait("Category", "Worker")]
+		public async Task JobExtensionInitializeNotAllowed_ActorNotAllowed()
+		{
+			using (TestHostContext hc = CreateTestContext(
+				overrideSettings: x => x.RequestSecuritySettings = new RequestSecuritySettings()
+				{
+					AllowedAuthors = new HashSet<string>() { "allowed-author" }
+				},
+				Actor: "noallowed-author"))
+			{
+				await _jobRunner.RunAsync(_message, _tokenSource.Token);
+
+				Assert.Equal(TaskResult.Failed, _jobEc.Result);
+				_stepRunner.Verify(x => x.RunAsync(It.IsAny<IExecutionContext>()), Times.Never);
+			}
+		}
+
+		[Fact]
+		[Trait("Level", "L0")]
+		[Trait("Category", "Worker")]
+		public async Task JobExtensionInitializeNotAllowed_ActorAllowed()
+		{
+			using (TestHostContext hc = CreateTestContext(
+				overrideSettings: x => x.RequestSecuritySettings = new RequestSecuritySettings()
+				{
+					AllowedAuthors = new HashSet<string>() { "allowed-author" }
+				},
+				Actor: "allowed-author"))
+			{
+				await _jobRunner.RunAsync(_message, _tokenSource.Token);
+
+				Assert.Equal(TaskResult.Succeeded, _jobEc.Result);
+				_stepRunner.Verify(x => x.RunAsync(It.IsAny<IExecutionContext>()), Times.Once);
+			}
+		}
+		////////// UAZO
+	}
 }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -137,7 +137,7 @@ namespace GitHub.Runner.Listener.Configuration
                     GitHubAuthResult authResult = await GetTenantCredential(inputUrl, registerToken, Constants.RunnerEvent.Register);
                     runnerSettings.ServerUrl = authResult.TenantUrl;
                     runnerSettings.UseV2Flow = authResult.UseV2Flow;
-                    _term.WriteLine($"Using V2 flow: {runnerSettings.UseV2Flow}");
+                    Trace.Info($"Using V2 flow: {runnerSettings.UseV2Flow}");
                     creds = authResult.ToVssCredentials();
                     Trace.Info("cred retrieved via GitHub auth");
                 }
@@ -259,7 +259,7 @@ namespace GitHub.Runner.Listener.Configuration
                     if (command.GetReplace())
                     {
                         // Update existing agent with new PublicKey, agent version.
-                        agent = UpdateExistingAgent(agent, publicKey, userLabels, runnerSettings.Ephemeral, command.DisableUpdate);
+                        agent = UpdateExistingAgent(agent, publicKey, userLabels, runnerSettings.Ephemeral, command.DisableUpdate, command.NoDefaultLabels);
 
                         try
                         {
@@ -293,7 +293,7 @@ namespace GitHub.Runner.Listener.Configuration
                 else
                 {
                     // Create a new agent.
-                    agent = CreateNewAgent(runnerSettings.AgentName, publicKey, userLabels, runnerSettings.Ephemeral, command.DisableUpdate);
+                    agent = CreateNewAgent(runnerSettings.AgentName, publicKey, userLabels, runnerSettings.Ephemeral, command.DisableUpdate, command.NoDefaultLabels);
 
                     try
                     {
@@ -561,7 +561,7 @@ namespace GitHub.Runner.Listener.Configuration
         }
 
 
-        private TaskAgent UpdateExistingAgent(TaskAgent agent, RSAParameters publicKey, ISet<string> userLabels, bool ephemeral, bool disableUpdate)
+        private TaskAgent UpdateExistingAgent(TaskAgent agent, RSAParameters publicKey, ISet<string> userLabels, bool ephemeral, bool disableUpdate, bool noDefaultLabels)
         {
             ArgUtil.NotNull(agent, nameof(agent));
             agent.Authorization = new TaskAgentAuthorization
@@ -578,9 +578,16 @@ namespace GitHub.Runner.Listener.Configuration
 
             agent.Labels.Clear();
 
-            agent.Labels.Add(new AgentLabel("self-hosted", LabelType.System));
-            agent.Labels.Add(new AgentLabel(VarUtil.OS, LabelType.System));
-            agent.Labels.Add(new AgentLabel(VarUtil.OSArchitecture, LabelType.System));
+            if (!noDefaultLabels)
+            {
+                agent.Labels.Add(new AgentLabel("self-hosted", LabelType.System));
+                agent.Labels.Add(new AgentLabel(VarUtil.OS, LabelType.System));
+                agent.Labels.Add(new AgentLabel(VarUtil.OSArchitecture, LabelType.System));
+            }
+            else if (userLabels.Count == 0)
+            {
+                throw new NotSupportedException("Disabling default labels via --no-default-labels without specifying --labels is not supported");
+            }
 
             foreach (var userLabel in userLabels)
             {
@@ -590,7 +597,7 @@ namespace GitHub.Runner.Listener.Configuration
             return agent;
         }
 
-        private TaskAgent CreateNewAgent(string agentName, RSAParameters publicKey, ISet<string> userLabels, bool ephemeral, bool disableUpdate)
+        private TaskAgent CreateNewAgent(string agentName, RSAParameters publicKey, ISet<string> userLabels, bool ephemeral, bool disableUpdate, bool noDefaultLabels)
         {
             TaskAgent agent = new(agentName)
             {
@@ -605,9 +612,16 @@ namespace GitHub.Runner.Listener.Configuration
                 DisableUpdate = disableUpdate
             };
 
-            agent.Labels.Add(new AgentLabel("self-hosted", LabelType.System));
-            agent.Labels.Add(new AgentLabel(VarUtil.OS, LabelType.System));
-            agent.Labels.Add(new AgentLabel(VarUtil.OSArchitecture, LabelType.System));
+            if (!noDefaultLabels)
+            {
+                agent.Labels.Add(new AgentLabel("self-hosted", LabelType.System));
+                agent.Labels.Add(new AgentLabel(VarUtil.OS, LabelType.System));
+                agent.Labels.Add(new AgentLabel(VarUtil.OSArchitecture, LabelType.System));
+            }
+            else if (userLabels.Count == 0)
+            {
+                throw new NotSupportedException("Disabling default labels via --no-default-labels without specifying --labels is not supported");
+            }
 
             foreach (var userLabel in userLabels)
             {
