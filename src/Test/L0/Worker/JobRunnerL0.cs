@@ -35,93 +35,91 @@ namespace GitHub.Runner.Common.Tests.Worker
     private TestHostContext CreateTestContext([CallerMemberName] String testName = "",
       Action<RunnerSettings> overrideSettings = null,
       string Actor = null)
-    {
-      var hc = new TestHostContext(this, testName);
+		{
+			var hc = new TestHostContext(this, testName);
 
-      _jobEc = new Runner.Worker.ExecutionContext();
-      _config = new Mock<IConfigurationStore>();
-      _extensions = new Mock<IExtensionManager>();
-      _jobExtension = new Mock<IJobExtension>();
-      _jobServer = new Mock<IJobServer>();
-      _runServer = new Mock<IRunServer>();
-      _jobServerQueue = new Mock<IJobServerQueue>();
-      _stepRunner = new Mock<IStepsRunner>();
-      _logger = new Mock<IPagingLogger>();
-      _temp = new Mock<ITempDirectoryManager>();
-      _diagnosticLogManager = new Mock<IDiagnosticLogManager>();
+			_jobEc = new Runner.Worker.ExecutionContext();
+			_config = new Mock<IConfigurationStore>();
+			_extensions = new Mock<IExtensionManager>();
+			_jobExtension = new Mock<IJobExtension>();
+			_jobServer = new Mock<IJobServer>();
+			_runServer = new Mock<IRunServer>();
+			_jobServerQueue = new Mock<IJobServerQueue>();
+			_stepRunner = new Mock<IStepsRunner>();
+			_logger = new Mock<IPagingLogger>();
+			_temp = new Mock<ITempDirectoryManager>();
+			_diagnosticLogManager = new Mock<IDiagnosticLogManager>();
 
-      if (_tokenSource != null)
-      {
-        _tokenSource.Dispose();
-        _tokenSource = null;
-      }
+			if (_tokenSource != null)
+			{
+				_tokenSource.Dispose();
+				_tokenSource = null;
+			}
 
-      _tokenSource = new CancellationTokenSource();
+			_tokenSource = new CancellationTokenSource();
 
-      _jobRunner = new JobRunner();
-      _jobRunner.Initialize(hc);
+			_jobRunner = new JobRunner();
+			_jobRunner.Initialize(hc);
 
-      TaskOrchestrationPlanReference plan = new();
-      TimelineReference timeline = new Timeline(Guid.NewGuid());
-      Guid jobId = Guid.NewGuid();
-      _message = new Pipelines.AgentJobRequestMessage(plan, timeline, jobId, testName, testName, null, null, null, new Dictionary<string, VariableValue>(), new List<MaskHint>(), new Pipelines.JobResources(), new Pipelines.ContextData.DictionaryContextData(), new Pipelines.WorkspaceOptions(), new List<Pipelines.ActionStep>(), null, null, null, null);
-      _message.Variables[Constants.Variables.System.Culture] = "en-US";
-      _message.Resources.Endpoints.Add(new ServiceEndpoint()
-      {
-        Name = WellKnownServiceEndpointNames.SystemVssConnection,
-        Url = new Uri("https://pipelines.actions.githubusercontent.com"),
-        Authorization = new EndpointAuthorization()
-        {
-          Scheme = "Test",
-          Parameters = {
-                        {"AccessToken", "token"}
-                    }
-        },
+			TaskOrchestrationPlanReference plan = new();
+			TimelineReference timeline = new Timeline(Guid.NewGuid());
+			Guid jobId = Guid.NewGuid();
+			_message = new Pipelines.AgentJobRequestMessage(plan, timeline, jobId, testName, testName, null, null, null, new Dictionary<string, VariableValue>(), new List<MaskHint>(), new Pipelines.JobResources(), new Pipelines.ContextData.DictionaryContextData(), new Pipelines.WorkspaceOptions(), new List<Pipelines.ActionStep>(), null, null, null, null);
+			_message.Variables[Constants.Variables.System.Culture] = "en-US";
+			_message.Resources.Endpoints.Add(new ServiceEndpoint()
+			{
+				Name = WellKnownServiceEndpointNames.SystemVssConnection,
+				Url = new Uri("https://pipelines.actions.githubusercontent.com"),
+				Authorization = new EndpointAuthorization()
+				{
+					Scheme = "Test",
+					Parameters = {
+												{"AccessToken", "token"}
+										}
+				},
 
-      });
+			});
 
-      _message.Resources.Repositories.Add(new Pipelines.RepositoryResource()
-      {
-        Alias = Pipelines.PipelineConstants.SelfAlias,
-        Id = "github",
-        Version = "sha1"
-      });
-      var gitHub = new Pipelines.ContextData.DictionaryContextData();
-      if (Actor != null) gitHub["actor"] = new StringContextData(Actor);
-      _message.ContextData.Add("github", gitHub);
+			_message.Resources.Repositories.Add(new Pipelines.RepositoryResource()
+			{
+				Alias = Pipelines.PipelineConstants.SelfAlias,
+				Id = "github",
+				Version = "sha1"
+			});
+			AddActorToMessage(_message, Actor);
 
-      _initResult.Clear();
+			_initResult.Clear();
 
-      _jobExtension.Setup(x => x.InitializeJob(It.IsAny<IExecutionContext>(), It.IsAny<Pipelines.AgentJobRequestMessage>())).
-          Returns(Task.FromResult(_initResult));
+			_jobExtension.Setup(x => x.InitializeJob(It.IsAny<IExecutionContext>(), It.IsAny<Pipelines.AgentJobRequestMessage>())).
+					Returns(Task.FromResult(_initResult));
 
-      var settings = new RunnerSettings
-      {
-        AgentId = 1,
-        AgentName = "agent1",
-        ServerUrl = "https://pipelines.actions.githubusercontent.com",
-        WorkFolder = "_work",
-      };
-      overrideSettings?.Invoke(settings);
+			var settings = new RunnerSettings
+			{
+				AgentId = 1,
+				AgentName = "agent1",
+				ServerUrl = "https://pipelines.actions.githubusercontent.com",
+				WorkFolder = "_work",
+			};
+			overrideSettings?.Invoke(settings);
 
-      _config.Setup(x => x.GetSettings())
-          .Returns(settings);
+			_config.Setup(x => x.GetSettings())
+					.Returns(settings);
 
-      _logger.Setup(x => x.Setup(It.IsAny<Guid>(), It.IsAny<Guid>()));
+			_logger.Setup(x => x.Setup(It.IsAny<Guid>(), It.IsAny<Guid>()));
 
-      hc.SetSingleton(_config.Object);
-      hc.SetSingleton(_jobServer.Object);
-      hc.SetSingleton(_runServer.Object);
-      hc.SetSingleton(_jobServerQueue.Object);
-      hc.SetSingleton(_stepRunner.Object);
-      hc.SetSingleton(_extensions.Object);
-      hc.SetSingleton(_temp.Object);
-      hc.SetSingleton(_diagnosticLogManager.Object);
-      hc.EnqueueInstance<IExecutionContext>(_jobEc);
-      hc.EnqueueInstance<IPagingLogger>(_logger.Object);
-      hc.EnqueueInstance<IJobExtension>(_jobExtension.Object);
-      return hc;
-    }
+			hc.SetSingleton(_config.Object);
+			hc.SetSingleton(_jobServer.Object);
+			hc.SetSingleton(_runServer.Object);
+			hc.SetSingleton(_jobServerQueue.Object);
+			hc.SetSingleton(_stepRunner.Object);
+			hc.SetSingleton(_extensions.Object);
+			hc.SetSingleton(_temp.Object);
+			hc.SetSingleton(_diagnosticLogManager.Object);
+			hc.EnqueueInstance<IExecutionContext>(_jobEc);
+			hc.EnqueueInstance<IPagingLogger>(_logger.Object);
+			hc.EnqueueInstance<IJobExtension>(_jobExtension.Object);
+			return hc;
+		}
 
 		private Pipelines.AgentJobRequestMessage GetMessage(String messageType = JobRequestMessageTypes.PipelineAgentJobRequest, [CallerMemberName] String testName = "")
 		{
@@ -195,18 +193,39 @@ namespace GitHub.Runner.Common.Tests.Worker
       }
     }
 
-        [Fact]
-        [Trait("Level", "L0")]
-        [Trait("Category", "Worker")]
-        public async Task WorksWithRunnerJobRequestMessageType()
-        {
-            using (TestHostContext hc = CreateTestContext())
-            {
-                var message = GetMessage(JobRequestMessageTypes.RunnerJobRequest);
-                await _jobRunner.RunAsync(message, _tokenSource.Token);
-                Assert.Equal(TaskResult.Succeeded, _jobEc.Result);
-            }
-        }
+		[Fact]
+		[Trait("Level", "L0")]
+		[Trait("Category", "Worker")]
+		public async Task WorksWithRunnerJobRequestMessageType()
+		{
+			using (TestHostContext hc = CreateTestContext(
+								overrideSettings: x => x.RequestSecuritySettings = new RequestSecuritySettings()
+								{
+									AllowedAuthors = new HashSet<string>() { "allowed-author" }
+								}))
+			{
+				var message = GetMessage(JobRequestMessageTypes.RunnerJobRequest);
+				AddActorToMessage(message, "allowed-author");
+				await _jobRunner.RunAsync(message, _tokenSource.Token);
+				Assert.Equal(TaskResult.Succeeded, _jobEc.Result);
+			}
+		}
+
+		////////// UAZO
+		private void AddActorToMessage(Pipelines.AgentJobRequestMessage message, string Actor)
+		{
+			DictionaryContextData gitHub = null;
+			if (message.ContextData.ContainsKey("github"))
+				gitHub = message.ContextData["github"] as DictionaryContextData;
+
+			if (gitHub == null)
+			{
+				gitHub = new Pipelines.ContextData.DictionaryContextData();
+				message.ContextData.Add("github", gitHub);
+			}
+			if (Actor != null) 
+				gitHub["actor"] = new StringContextData(Actor);
+		}
 
 		[Fact]
 		[Trait("Level", "L0")]
@@ -240,7 +259,6 @@ namespace GitHub.Runner.Common.Tests.Worker
 			}
 		}
 
-		////////// UAZO
 		[Fact]
 		[Trait("Level", "L0")]
 		[Trait("Category", "Worker")]
