@@ -1042,7 +1042,7 @@ namespace GitHub.Runner.Worker
                 if (actionDefinitionData.Execution.ExecutionType == ActionExecutionType.Container)
                 {
                     var containerAction = actionDefinitionData.Execution as ContainerActionExecutionData;
-                    if (containerAction.Image.EndsWith("Dockerfile") || containerAction.Image.EndsWith("dockerfile"))
+                    if (DockerUtil.IsDockerfile(containerAction.Image))
                     {
                         var dockerFileFullPath = Path.Combine(actionEntryDirectory, containerAction.Image);
                         executionContext.Debug($"Dockerfile for action: '{dockerFileFullPath}'.");
@@ -1127,8 +1127,16 @@ namespace GitHub.Runner.Worker
             }
             else
             {
-                var fullPath = IOUtil.ResolvePath(actionEntryDirectory, "."); // resolve full path without access filesystem.
-                throw new InvalidOperationException($"Can't find 'action.yml', 'action.yaml' or 'Dockerfile' under '{fullPath}'. Did you forget to run actions/checkout before running your local action?");
+                var reference = repositoryReference.Name;
+                if (!string.IsNullOrEmpty(repositoryReference.Path))
+                {
+                    reference = $"{reference}/{repositoryReference.Path}";
+                }
+                if (!string.IsNullOrEmpty(repositoryReference.Ref))
+                {
+                    reference = $"{reference}@{repositoryReference.Ref}";
+                }
+                throw new InvalidOperationException($"Can't find 'action.yml', 'action.yaml' or 'Dockerfile' for action '{reference}'.");
             }
         }
 

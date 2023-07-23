@@ -7,6 +7,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using GitHub.DistributedTask.ObjectTemplating.Tokens;
 using GitHub.DistributedTask.Pipelines;
 using GitHub.DistributedTask.WebApi;
 using GitHub.Runner.Common;
@@ -234,7 +235,7 @@ namespace GitHub.Runner.Worker
                 finally
                 {
                     Trace.Info("Finalize job.");
-                    jobExtension.FinalizeJob(jobContext, message, jobStartTimeUtc);
+                    await jobExtension.FinalizeJob(jobContext, message, jobStartTimeUtc);
                 }
 
                 Trace.Info($"Job result after all job steps finish: {jobContext.Result ?? TaskResult.Succeeded}");
@@ -289,6 +290,13 @@ namespace GitHub.Runner.Worker
             // Make sure we don't submit secrets as telemetry
             MaskTelemetrySecrets(jobContext.Global.JobTelemetry);
 
+            // Get environment url
+            string environmentUrl = null;
+            if (jobContext.ActionsEnvironment?.Url is StringToken urlStringToken)
+            {
+                environmentUrl = urlStringToken.Value;
+            }
+
             Trace.Info($"Raising job completed against run service");
             var completeJobRetryLimit = 5;
             var exceptions = new List<Exception>();
@@ -296,7 +304,7 @@ namespace GitHub.Runner.Worker
             {
                 try
                 {
-                    await runServer.CompleteJobAsync(message.Plan.PlanId, message.JobId, result, jobContext.JobOutputs, jobContext.Global.StepsResult, jobContext.Global.JobAnnotations, default);
+                    await runServer.CompleteJobAsync(message.Plan.PlanId, message.JobId, result, jobContext.JobOutputs, jobContext.Global.StepsResult, jobContext.Global.JobAnnotations, environmentUrl, default);
                     return result;
                 }
                 catch (Exception ex)
@@ -370,6 +378,12 @@ namespace GitHub.Runner.Worker
             {
                 var actions = string.Join(", ", StringUtil.ConvertFromJson<HashSet<string>>(node12Warnings));
                 jobContext.Warning(string.Format(Constants.Runner.Node12DetectedAfterEndOfLife, actions));
+            }
+
+            if (jobContext.Global.Variables.TryGetValue(Constants.Runner.EnforcedNode12DetectedAfterEndOfLifeEnvVariable, out var node16ForceWarnings))
+            {
+                var actions = string.Join(", ", StringUtil.ConvertFromJson<HashSet<string>>(node16ForceWarnings));
+                jobContext.Warning(string.Format(Constants.Runner.EnforcedNode12DetectedAfterEndOfLife, actions));
             }
 
             try
