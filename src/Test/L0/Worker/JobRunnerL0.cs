@@ -11,27 +11,28 @@ using Pipelines = GitHub.DistributedTask.Pipelines;
 
 namespace GitHub.Runner.Common.Tests.Worker
 {
-    public sealed class JobRunnerL0
+    public class JobRunnerL0
     {
-        private IExecutionContext _jobEc;
-        private JobRunner _jobRunner;
+        protected IExecutionContext _jobEc;
+        protected JobRunner _jobRunner;
         private List<IStep> _initResult = new();
-        private CancellationTokenSource _tokenSource;
+        protected CancellationTokenSource _tokenSource;
         private Mock<IJobServer> _jobServer;
 
         private Mock<IRunServer> _runServer;
         private Mock<IJobServerQueue> _jobServerQueue;
         private Mock<IConfigurationStore> _config;
         private Mock<IExtensionManager> _extensions;
-        private Mock<IStepsRunner> _stepRunner;
+        protected Mock<IStepsRunner> _stepRunner;
 
         private Mock<IJobExtension> _jobExtension;
         private Mock<IPagingLogger> _logger;
         private Mock<ITempDirectoryManager> _temp;
         private Mock<IDiagnosticLogManager> _diagnosticLogManager;
 
-        private TestHostContext CreateTestContext([CallerMemberName] String testName = "")
-        {
+				protected TestHostContext CreateTestContext([CallerMemberName] String testName = "",
+					Action<RunnerSettings> overrideSettings = null)
+				{
             var hc = new TestHostContext(this, testName);
 
             _jobEc = new Runner.Worker.ExecutionContext();
@@ -69,6 +70,7 @@ namespace GitHub.Runner.Common.Tests.Worker
                 ServerUrl = "https://pipelines.actions.githubusercontent.com",
                 WorkFolder = "_work",
             };
+						overrideSettings?.Invoke(settings);
 
             _config.Setup(x => x.GetSettings())
                 .Returns(settings);
@@ -89,7 +91,7 @@ namespace GitHub.Runner.Common.Tests.Worker
             return hc;
         }
 
-        private Pipelines.AgentJobRequestMessage GetMessage(String messageType = JobRequestMessageTypes.PipelineAgentJobRequest, [CallerMemberName] String testName = "")
+        protected Pipelines.AgentJobRequestMessage GetMessage(String messageType = JobRequestMessageTypes.PipelineAgentJobRequest, [CallerMemberName] String testName = "")
         {
             TaskOrchestrationPlanReference plan = new();
             TimelineReference timeline = new Timeline(Guid.NewGuid());
@@ -159,19 +161,6 @@ namespace GitHub.Runner.Common.Tests.Worker
 
                 Assert.Equal(TaskResult.Canceled, _jobEc.Result);
                 _stepRunner.Verify(x => x.RunAsync(It.IsAny<IExecutionContext>()), Times.Never);
-            }
-        }
-
-        [Fact]
-        [Trait("Level", "L0")]
-        [Trait("Category", "Worker")]
-        public async Task WorksWithRunnerJobRequestMessageType()
-        {
-            using (TestHostContext hc = CreateTestContext())
-            {
-                var message = GetMessage(JobRequestMessageTypes.RunnerJobRequest);
-                await _jobRunner.RunAsync(message, _tokenSource.Token);
-                Assert.Equal(TaskResult.Succeeded, _jobEc.Result);
             }
         }
     }
