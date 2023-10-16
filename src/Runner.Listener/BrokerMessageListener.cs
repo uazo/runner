@@ -73,7 +73,7 @@ namespace GitHub.Runner.Listener
                 _getMessagesTokenSource = CancellationTokenSource.CreateLinkedTokenSource(token);
                 try
                 {
-                    message = await _brokerServer.GetRunnerMessageAsync(_getMessagesTokenSource.Token, runnerStatus, BuildConstants.RunnerPackage.Version);
+                    message = await _brokerServer.GetRunnerMessageAsync(_getMessagesTokenSource.Token, runnerStatus, BuildConstants.RunnerPackage.Version, VarUtil.OS, VarUtil.OSArchitecture);
 
                     if (message == null)
                     {
@@ -108,7 +108,7 @@ namespace GitHub.Runner.Listener
 
                     if (!IsGetNextMessageExceptionRetriable(ex))
                     {
-                        throw;
+                        throw new NonRetryableException("Get next message failed with non-retryable error.", ex);
                     }
                     else
                     {
