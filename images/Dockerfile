@@ -4,9 +4,9 @@ FROM mcr.microsoft.com/dotnet/runtime-deps:6.0-jammy as build
 ARG TARGETOS
 ARG TARGETARCH
 ARG RUNNER_VERSION
-ARG RUNNER_CONTAINER_HOOKS_VERSION=0.4.0
-ARG DOCKER_VERSION=24.0.6
-ARG BUILDX_VERSION=0.11.2
+ARG RUNNER_CONTAINER_HOOKS_VERSION=0.5.1
+ARG DOCKER_VERSION=25.0.2
+ARG BUILDX_VERSION=0.12.1
 
 RUN apt update -y && apt install curl unzip -y
 
@@ -37,6 +37,7 @@ FROM mcr.microsoft.com/dotnet/runtime-deps:6.0-jammy
 ENV DEBIAN_FRONTEND=noninteractive
 ENV RUNNER_MANUALLY_TRAP_SIG=1
 ENV ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT=1
+ENV ImageOS=ubuntu22
 
 RUN apt-get update -y \
     && apt-get install -y --no-install-recommends \
