@@ -613,7 +613,7 @@ namespace GitHub.Runner.Common
 
         private void SendResultsTelemetry(Exception ex)
         {
-            var issue = new Issue() { Type = IssueType.Warning, Message = $"Caught exception with results. {ex.Message}" };
+            var issue = new Issue() { Type = IssueType.Warning, Message = $"Caught exception with results. {HostContext.SecretMasker.MaskSecrets(ex.Message)}" };
             issue.Data[Constants.Runner.InternalTelemetryIssueDataKey] = Constants.Runner.ResultsUploadFailure;
 
             var telemetryRecord = new TimelineRecord()
@@ -709,7 +709,9 @@ namespace GitHub.Runner.Common
                             {
                                 Trace.Info("Catch exception during update steps, skip update Results.");
                                 Trace.Error(e);
-                                if (!_resultsServiceOnly)
+                                _resultsServiceExceptionsCount++;
+                                // If we hit any exceptions uploading to Results, let's skip any additional uploads to Results unless Results is serving logs
+                                if (!_resultsServiceOnly && _resultsServiceExceptionsCount > 3)
                                 {
                                     _resultsClientInitiated = false;
                                     SendResultsTelemetry(e);
