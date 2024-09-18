@@ -244,6 +244,11 @@ namespace GitHub.Runner.Common
                 _trace.Info($"Adding extra user agent '{extraUserAgentHeader}' to all HTTP requests.");
                 _userAgents.Add(extraUserAgentHeader);
             }
+
+            var currentProcess = Process.GetCurrentProcess();
+            _userAgents.Add(new ProductInfoHeaderValue("Pid", currentProcess.Id.ToString()));
+            _userAgents.Add(new ProductInfoHeaderValue("CreationTime", Uri.EscapeDataString(DateTime.UtcNow.ToString("O"))));
+            _userAgents.Add(new ProductInfoHeaderValue($"({hostType})"));
         }
 
         public string GetDirectory(WellKnownDirectory directory)
