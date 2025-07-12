@@ -1,18 +1,5 @@
-using GitHub.DistributedTask.WebApi;
-using Pipelines = GitHub.DistributedTask.Pipelines;
-using GitHub.Runner.Common.Util;
-using GitHub.Services.Common;
-using GitHub.Services.WebApi;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Net.Http;
+﻿using GitHub.DistributedTask.Pipelines.ContextData;
 using GitHub.Runner.Common;
-using GitHub.Runner.Sdk;
-using GitHub.DistributedTask.Pipelines.ContextData;
 
 namespace GitHub.Runner.Worker
 {
@@ -42,7 +29,6 @@ namespace GitHub.Runner.Worker
       catch //(Exception ex)
       {
         Trace.Error("You are not allowing this job to run");
-        // Trace.Error(ex);
         return false;
       }
     }
@@ -63,7 +49,7 @@ namespace GitHub.Runner.Worker
       var actor = gitHubContext.TryGetValue("actor", out var value)
         ? value as StringContextData : null;
 
-      Trace.Info($"GitHub PR actor is {actor as StringContextData}");
+      Trace.Info($"GitHub PR actor is {actor}");
 
       if (actor == null)
       {
