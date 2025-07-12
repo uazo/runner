@@ -24,37 +24,20 @@ jobs:
           os: ubuntu-latest
           devScript: ./dev.sh
 
-        - runtime: osx-x64
-          os: macOS-latest
-          devScript: ./dev.sh
-
-        - runtime: osx-arm64
-          os: macOS-latest
-          devScript: ./dev.sh
-
-        - runtime: win-x64
-          os: windows-latest
-          devScript: ./dev
-
-        - runtime: win-arm64
-          os: windows-latest
-          devScript: ./dev
-
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
 
     # Build runner layout
     - name: Build & Layout Release
-      shell: bash
       run: |
-        bash ${{ matrix.devScript }} layout Release ${{ matrix.runtime }}
+        ${{ matrix.devScript }} layout Release ${{ matrix.runtime }}
       working-directory: src
 
     # Run tests
     - name: L0
       run: |
-        bash ${{ matrix.devScript }} test
+        ${{ matrix.devScript }} test
       working-directory: src
       if: matrix.runtime != 'linux-arm64' && matrix.runtime != 'linux-arm' && matrix.runtime != 'osx-arm64' && matrix.runtime != 'win-arm64'
 
