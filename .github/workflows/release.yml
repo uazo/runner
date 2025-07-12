@@ -60,6 +60,30 @@ jobs:
           os: ubuntu-latest
           devScript: bash ./dev.sh
 
+        - runtime: linux-arm64
+          os: ubuntu-latest
+          devScript: ./dev.sh
+
+        - runtime: linux-arm
+          os: ubuntu-latest
+          devScript: ./dev.sh
+
+        - runtime: osx-x64
+          os: macOS-latest
+          devScript: ./dev.sh
+
+        - runtime: osx-arm64
+          os: macOS-latest
+          devScript: ./dev.sh
+
+        - runtime: win-x64
+          os: windows-latest
+          devScript: ./dev
+
+        - runtime: win-arm64
+          os: windows-latest
+          devScript: ./dev
+
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
@@ -153,8 +177,28 @@ jobs:
           ${{ steps.releaseNote.outputs.note }}
 
     # Upload release assets (full runner packages)
+    - name: Upload Release Asset (win-x64)
+      uses: actions/upload-release-asset@v1.0.2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.createRelease.outputs.upload_url }}
+        asset_path: ${{ github.workspace }}/actions-runner-win-x64-${{ steps.releaseNote.outputs.version }}.zip
+        asset_name: actions-runner-win-x64-${{ steps.releaseNote.outputs.version }}.zip
+        asset_content_type: application/octet-stream
+
+    - name: Upload Release Asset (win-arm64)
+      uses: actions/upload-release-asset@v1.0.2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.createRelease.outputs.upload_url }}
+        asset_path: ${{ github.workspace }}/actions-runner-win-arm64-${{ steps.releaseNote.outputs.version }}.zip
+        asset_name: actions-runner-win-arm64-${{ steps.releaseNote.outputs.version }}.zip
+        asset_content_type: application/octet-stream
+
     - name: Upload Release Asset (linux-x64)
-      uses: actions/upload-release-asset@v1.0.1
+      uses: actions/upload-release-asset@v1.0.2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
@@ -163,6 +207,45 @@ jobs:
         asset_name: actions-runner-linux-x64-${{ steps.releaseNote.outputs.version }}.tar.gz
         asset_content_type: application/octet-stream
 
+    - name: Upload Release Asset (osx-x64)
+      uses: actions/upload-release-asset@v1.0.2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.createRelease.outputs.upload_url }}
+        asset_path: ${{ github.workspace }}/actions-runner-osx-x64-${{ steps.releaseNote.outputs.version }}.tar.gz
+        asset_name: actions-runner-osx-x64-${{ steps.releaseNote.outputs.version }}.tar.gz
+        asset_content_type: application/octet-stream
+
+    - name: Upload Release Asset (osx-arm64)
+      uses: actions/upload-release-asset@v1.0.2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.createRelease.outputs.upload_url }}
+        asset_path: ${{ github.workspace }}/actions-runner-osx-arm64-${{ steps.releaseNote.outputs.version }}.tar.gz
+        asset_name: actions-runner-osx-arm64-${{ steps.releaseNote.outputs.version }}.tar.gz
+        asset_content_type: application/octet-stream
+
+    - name: Upload Release Asset (linux-arm)
+      uses: actions/upload-release-asset@v1.0.2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.createRelease.outputs.upload_url }}
+        asset_path: ${{ github.workspace }}/actions-runner-linux-arm-${{ steps.releaseNote.outputs.version }}.tar.gz
+        asset_name: actions-runner-linux-arm-${{ steps.releaseNote.outputs.version }}.tar.gz
+        asset_content_type: application/octet-stream
+
+    - name: Upload Release Asset (linux-arm64)
+      uses: actions/upload-release-asset@v1.0.2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.createRelease.outputs.upload_url }}
+        asset_path: ${{ github.workspace }}/actions-runner-linux-arm64-${{ steps.releaseNote.outputs.version }}.tar.gz
+        asset_name: actions-runner-linux-arm64-${{ steps.releaseNote.outputs.version }}.tar.gz
+        asset_content_type: application/octet-stream
 
   publish-image:
     needs: release

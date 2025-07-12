@@ -24,6 +24,22 @@ jobs:
           os: ubuntu-latest
           devScript: ./dev.sh
 
+        - runtime: osx-x64
+          os: macOS-latest
+          devScript: ./dev.sh
+
+        - runtime: osx-arm64
+          os: macOS-latest
+          devScript: ./dev.sh
+
+        - runtime: win-x64
+          os: windows-latest
+          devScript: ./dev
+
+        - runtime: win-arm64
+          os: windows-latest
+          devScript: ./dev
+
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
