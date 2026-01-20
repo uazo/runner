@@ -1,43 +1,27 @@
 ## What's Changed
-* Update safe_sleep.sh for bug when scheduler is paused for more than 1 second by @horner in https://github.com/actions/runner/pull/3157
-* Acknowledge runner request by @ericsciple in https://github.com/actions/runner/pull/3996
-* Update Docker to v28.3.3 and Buildx to v0.27.0 by @github-actions[bot] in https://github.com/actions/runner/pull/3999
-* Update dotnet sdk to latest version @8.0.413 by @github-actions[bot] in https://github.com/actions/runner/pull/4000
-* Bump actions/attest-build-provenance from 2 to 3 by @dependabot[bot] in https://github.com/actions/runner/pull/4002
-* Bump @typescript-eslint/eslint-plugin from 6.7.2 to 8.35.0 in /src/Misc/expressionFunc/hashFiles by @dependabot[bot] in https://github.com/actions/runner/pull/3920
-* Bump husky from 8.0.3 to 9.1.7 in /src/Misc/expressionFunc/hashFiles by @dependabot[bot] in https://github.com/actions/runner/pull/3842
-* Bump @vercel/ncc from 0.38.0 to 0.38.3 in /src/Misc/expressionFunc/hashFiles by @dependabot[bot] in https://github.com/actions/runner/pull/3841
-* Bump eslint-plugin-github from 4.10.0 to 4.10.2 in /src/Misc/expressionFunc/hashFiles by @dependabot[bot] in https://github.com/actions/runner/pull/3180
-* Bump typescript from 5.2.2 to 5.9.2 in /src/Misc/expressionFunc/hashFiles by @dependabot[bot] in https://github.com/actions/runner/pull/4007
-* chore: migrate Husky config from v8 to v9 format by @salmanmkc in https://github.com/actions/runner/pull/4003
-* Map RUNNER_TEMP for container action by @ericsciple in https://github.com/actions/runner/pull/4011
-* Break UseV2Flow into UseV2Flow and UseRunnerAdminFlow. by @TingluoHuang in https://github.com/actions/runner/pull/4013
-* Update Docker to v28.4.0 and Buildx to v0.28.0 by @github-actions[bot] in https://github.com/actions/runner/pull/4020
-* Bump node.js to latest version in runner. by @TingluoHuang in https://github.com/actions/runner/pull/4022
-* feat: add automated .NET dependency management workflow by @salmanmkc in https://github.com/actions/runner/pull/4028
-* feat: add automated Docker BuildX dependency management workflow by @salmanmkc in https://github.com/actions/runner/pull/4029
-* feat: add automated Node.js version management workflow by @salmanmkc in https://github.com/actions/runner/pull/4026
-* feat: add comprehensive NPM security management workflow by @salmanmkc in https://github.com/actions/runner/pull/4027
-* feat: add comprehensive dependency monitoring system by @salmanmkc in https://github.com/actions/runner/pull/4025
-* Use BrokerURL when using RunnerAdmin by @luketomlinson in https://github.com/actions/runner/pull/4044
-* Bump actions/github-script from 7.0.1 to 8.0.0 by @dependabot[bot] in https://github.com/actions/runner/pull/4016
-* Bump actions/stale from 9 to 10 by @dependabot[bot] in https://github.com/actions/runner/pull/4015
-* fix: prevent Node.js upgrade workflow from creating PRs with empty versions by @salmanmkc in https://github.com/actions/runner/pull/4055
-* chore: update Node versions by @github-actions[bot] in https://github.com/actions/runner/pull/4057
-* Bump actions/setup-node from 4 to 5 by @dependabot[bot] in https://github.com/actions/runner/pull/4037
-* Bump Azure.Storage.Blobs from 12.25.0 to 12.25.1 by @dependabot[bot] in https://github.com/actions/runner/pull/4058
-* Update Docker to v28.5.0 and Buildx to v0.29.1 by @github-actions[bot] in https://github.com/actions/runner/pull/4069
-* Bump github/codeql-action from 3 to 4 by @dependabot[bot] in https://github.com/actions/runner/pull/4072
-* chore: update Node versions by @github-actions[bot] in https://github.com/actions/runner/pull/4075
-* Include k8s novolume (version v0.8.0) by @nikola-jokic in https://github.com/actions/runner/pull/4063
-* Make sure runner-admin has both auth_url and auth_url_v2. by @TingluoHuang in https://github.com/actions/runner/pull/4066
-* Report job has infra failure to run-service by @TingluoHuang in https://github.com/actions/runner/pull/4073
-* Bump actions/setup-node from 5 to 6 by @dependabot[bot] in https://github.com/actions/runner/pull/4078
+* Fix owner of /home/runner directory by @nikola-jokic in https://github.com/actions/runner/pull/4132
+* Update Docker to v29.0.2 and Buildx to v0.30.1 by @github-actions[bot] in https://github.com/actions/runner/pull/4135
+* Update workflow around runner docker image. by @TingluoHuang in https://github.com/actions/runner/pull/4133
+* Fix regex for validating runner version format by @TingluoHuang in https://github.com/actions/runner/pull/4136
+* chore: update Node versions by @github-actions[bot] in https://github.com/actions/runner/pull/4144
+* Ensure safe_sleep tries alternative approaches by @TingluoHuang in https://github.com/actions/runner/pull/4146
+* Bump actions/github-script from 7 to 8 by @dependabot[bot] in https://github.com/actions/runner/pull/4137
+* Bump actions/checkout from 5 to 6 by @dependabot[bot] in https://github.com/actions/runner/pull/4130
+* chore: update Node versions by @github-actions[bot] in https://github.com/actions/runner/pull/4149
+* Bump docker image to use ubuntu 24.04 by @TingluoHuang in https://github.com/actions/runner/pull/4018
+* Add support for case function by @AllanGuigou in https://github.com/actions/runner/pull/4147
+* Cleanup feature flag actions_container_action_runner_temp by @ericsciple in https://github.com/actions/runner/pull/4163
+* Bump actions/download-artifact from 6 to 7 by @dependabot[bot] in https://github.com/actions/runner/pull/4155
+* Bump actions/upload-artifact from 5 to 6 by @dependabot[bot] in https://github.com/actions/runner/pull/4157
+* Set ACTIONS_ORCHESTRATION_ID as env to actions. by @TingluoHuang in https://github.com/actions/runner/pull/4178
+* Allow hosted VM report job telemetry via .setup_info file. by @TingluoHuang in https://github.com/actions/runner/pull/4186
+* Bump typescript from 5.9.2 to 5.9.3 in /src/Misc/expressionFunc/hashFiles by @dependabot[bot] in https://github.com/actions/runner/pull/4184
+* Bump Azure.Storage.Blobs from 12.26.0 to 12.27.0 by @dependabot[bot] in https://github.com/actions/runner/pull/4189
 
 ## New Contributors
-* @horner made their first contribution in https://github.com/actions/runner/pull/3157
+* @AllanGuigou made their first contribution in https://github.com/actions/runner/pull/4147
 
-**Full Changelog**: https://github.com/actions/runner/compare/v2.328.0...v2.329.0
+**Full Changelog**: https://github.com/actions/runner/compare/v2.330.0...v2.331.0
 
 _Note: Actions Runner follows a progressive release policy, so the latest release might not be available to your enterprise, organization, or repository yet.
 To confirm which version of the Actions Runner you should expect, please view the download instructions for your enterprise, organization, or repository.

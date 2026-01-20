@@ -14,6 +14,9 @@ on:
     paths-ignore:
     - '**.md'
 
+permissions:
+  contents: read
+
 jobs:
   build:
     strategy:
@@ -26,7 +29,7 @@ jobs:
 
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
 
     # Build runner layout
     - name: Build & Layout Release
@@ -51,7 +54,7 @@ jobs:
     # Upload runner package tar.gz/zip as artifact
     - name: Publish Artifact
       if: github.event_name != 'pull_request'
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: runner-package-${{ matrix.runtime }}
         path: |
