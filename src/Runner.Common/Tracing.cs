@@ -13,6 +13,13 @@ namespace GitHub.Runner.Common
         private TraceSource _traceSource;
         private bool _traceToConsole;
 
+        /// <summary>
+        /// The underlying <see cref="System.Diagnostics.TraceSource"/> for this instance.
+        /// Useful when third-party libraries require a <see cref="System.Diagnostics.TraceSource"/>
+        /// to route their diagnostics into the runner's log infrastructure.
+        /// </summary>
+        public TraceSource Source => _traceSource;
+
         public Tracing(string name, ISecretMasker secretMasker, SourceSwitch sourceSwitch, HostTraceListener traceListener,
           bool traceToConsole, StdoutTraceListener stdoutTraceListener = null)
         {

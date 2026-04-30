@@ -253,6 +253,35 @@ namespace GitHub.DistributedTask.Pipelines
             set;
         }
 
+        [DataMember(EmitDefaultValue = false)]
+        public bool EnableDebugger
+        {
+            get;
+            set;
+        }
+
+        [DataMember(EmitDefaultValue = false)]
+        public DebuggerTunnelInfo DebuggerTunnel
+        {
+            get;
+            set;
+        }
+
+        /// <summary>
+        /// Gets the workflow-level action dependencies (lockfile entries)
+        /// </summary>
+        public IList<String> ActionsDependencies
+        {
+            get
+            {
+                if (m_actionsDependencies == null)
+                {
+                    m_actionsDependencies = new List<String>();
+                }
+                return m_actionsDependencies;
+            }
+        }
+
         /// <summary>
         /// Gets the collection of variables associated with the current context.
         /// </summary>
@@ -427,6 +456,11 @@ namespace GitHub.DistributedTask.Pipelines
                 m_variables = null;
             }
 
+            if (m_actionsDependencies?.Count == 0)
+            {
+                m_actionsDependencies = null;
+            }
+
             // todo: remove after feature-flag DistributedTask.EvaluateContainerOnRunner is enabled everywhere
             if (!string.IsNullOrEmpty(m_jobContainerResourceAlias))
             {
@@ -451,6 +485,9 @@ namespace GitHub.DistributedTask.Pipelines
 
         [DataMember(Name = "Variables", EmitDefaultValue = false)]
         private IDictionary<String, VariableValue> m_variables;
+
+        [DataMember(Name = "dependencies", EmitDefaultValue = false)]
+        private List<String> m_actionsDependencies;
 
         // todo: remove after feature-flag DistributedTask.EvaluateContainerOnRunner is enabled everywhere
         [DataMember(Name = "JobSidecarContainers", EmitDefaultValue = false)]

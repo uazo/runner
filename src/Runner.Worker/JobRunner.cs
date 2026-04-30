@@ -13,6 +13,7 @@ using GitHub.DistributedTask.WebApi;
 using GitHub.Runner.Common;
 using GitHub.Runner.Common.Util;
 using GitHub.Runner.Sdk;
+using GitHub.Runner.Worker.Dap;
 using GitHub.Services.Common;
 using GitHub.Services.WebApi;
 using Sdk.RSWebApi.Contracts;
@@ -26,11 +27,12 @@ namespace GitHub.Runner.Worker
     Task<TaskResult> RunAsync(AgentJobRequestMessage message, CancellationToken jobRequestCancellationToken);
   }
 
-  public sealed partial class JobRunner : RunnerService, IJobRunner
-  {
-    private IJobServerQueue _jobServerQueue;
-    private RunnerSettings _runnerSettings;
-    private ITempDirectoryManager _tempDirectoryManager;
+    public sealed class JobRunner : RunnerService, IJobRunner
+    {
+        private const string DebuggerConnectionTelemetryPrefix = "DebuggerConnectionResult";
+        private IJobServerQueue _jobServerQueue;
+        private RunnerSettings _runnerSettings;
+        private ITempDirectoryManager _tempDirectoryManager;
 
     public async Task<TaskResult> RunAsync(AgentJobRequestMessage message, CancellationToken jobRequestCancellationToken)
     {
@@ -110,24 +112,17 @@ namespace GitHub.Runner.Worker
 
       HostContext.WritePerfCounter($"WorkerJobServerQueueStarted_{message.RequestId.ToString()}");
 
-      IExecutionContext jobContext = null;
-      CancellationTokenRegistration? runnerShutdownRegistration = null;
-      try
-      {
-        // Load settings early
-        _runnerSettings = HostContext.GetService<IConfigurationStore>().GetSettings();
-
-        // Create the job execution context.
-        jobContext = HostContext.CreateService<IExecutionContext>();
-        jobContext.InitializeJob(message, jobRequestCancellationToken);
-        Trace.Info("Starting the job execution context.");
-        jobContext.Start();
-        if (!CheckPermissions(jobContext))
-        {
-          return await CompleteJobAsync(server, jobContext, message,
-            jobContext.CancellationToken.IsCancellationRequested ? TaskResult.Canceled : TaskResult.Failed);
-        }
-        jobContext.Debug($"Starting: {message.JobDisplayName}");
+            IExecutionContext jobContext = null;
+            CancellationTokenRegistration? runnerShutdownRegistration = null;
+            IDapDebugger dapDebugger = null;
+            try
+            {
+                // Create the job execution context.
+                jobContext = HostContext.CreateService<IExecutionContext>();
+                jobContext.InitializeJob(message, jobRequestCancellationToken);
+                Trace.Info("Starting the job execution context.");
+                jobContext.Start();
+                jobContext.Debug($"Starting: {message.JobDisplayName}");
 
         runnerShutdownRegistration = HostContext.RunnerShutdownToken.Register(() =>
         {
@@ -186,46 +181,93 @@ namespace GitHub.Runner.Worker
         _tempDirectoryManager = HostContext.GetService<ITempDirectoryManager>();
         _tempDirectoryManager.InitializeTempDirectory(jobContext);
 
-        // Get the job extension.
-        Trace.Info("Getting job extension.");
-        IJobExtension jobExtension = HostContext.CreateService<IJobExtension>();
-        List<IStep> jobSteps = null;
-        try
-        {
-          Trace.Info("Initialize job. Getting all job steps.");
-          jobSteps = await jobExtension.InitializeJob(jobContext, message);
-        }
-        catch (OperationCanceledException ex) when (jobContext.CancellationToken.IsCancellationRequested)
-        {
-          // set the job to cancelled
-          // don't log error issue to job ExecutionContext, since server owns the job level issue
-          Trace.Error($"Job is cancelled during initialize.");
-          Trace.Error($"Caught exception: {ex}");
-          return await CompleteJobAsync(server, jobContext, message, TaskResult.Canceled);
-        }
-        catch (Exception ex)
-        {
-          // set the job to failed.
-          // don't log error issue to job ExecutionContext, since server owns the job level issue
-          Trace.Error($"Job initialize failed.");
-          Trace.Error($"Caught exception from {nameof(jobExtension.InitializeJob)}: {ex}");
-          return await CompleteJobAsync(server, jobContext, message, TaskResult.Failed);
-        }
+                // Setup the debugger
+                if (jobContext.Global.Debugger?.Enabled == true)
+                {
+                    Trace.Info("Debugger enabled for this job run");
+
+                    try
+                    {
+                        dapDebugger = HostContext.GetService<IDapDebugger>();
+                        await dapDebugger.StartAsync(jobContext);
+                    }
+                    catch (Exception ex)
+                    {
+                        Trace.Error($"Failed to start DAP debugger: {ex.Message}");
+                        AddDebuggerConnectionTelemetry(jobContext, $"Failed: {ex.Message}");
+                        jobContext.Error("Failed to start debugger.");
+                        return await CompleteJobAsync(server, jobContext, message, TaskResult.Failed);
+                    }
+                }
+
+
+                // Get the job extension.
+                Trace.Info("Getting job extension.");
+                IJobExtension jobExtension = HostContext.CreateService<IJobExtension>();
+                List<IStep> jobSteps = null;
+                try
+                {
+                    Trace.Info("Initialize job. Getting all job steps.");
+                    jobSteps = await jobExtension.InitializeJob(jobContext, message);
+                }
+                catch (OperationCanceledException ex) when (jobContext.CancellationToken.IsCancellationRequested)
+                {
+                    // set the job to cancelled
+                    // don't log error issue to job ExecutionContext, since server owns the job level issue
+                    Trace.Error($"Job is cancelled during initialize.");
+                    Trace.Error($"Caught exception: {ex}");
+                    return await CompleteJobAsync(server, jobContext, message, TaskResult.Canceled);
+                }
+                catch (Exception ex)
+                {
+                    // set the job to failed.
+                    // don't log error issue to job ExecutionContext, since server owns the job level issue
+                    Trace.Error($"Job initialize failed.");
+                    Trace.Error($"Caught exception from {nameof(jobExtension.InitializeJob)}: {ex}");
+                    return await CompleteJobAsync(server, jobContext, message, TaskResult.Failed);
+                }
 
         // trace out all steps
         Trace.Info($"Total job steps: {jobSteps.Count}.");
         Trace.Verbose($"Job steps: '{string.Join(", ", jobSteps.Select(x => x.DisplayName))}'");
         HostContext.WritePerfCounter($"WorkerJobInitialized_{message.RequestId.ToString()}");
 
-        if (systemConnection.Data.TryGetValue("GenerateIdTokenUrl", out var generateIdTokenUrl) &&
-            !string.IsNullOrEmpty(generateIdTokenUrl))
-        {
-          // Server won't issue ID_TOKEN for non-inprogress job.
-          // If the job is trying to use OIDC feature, we want the job to be marked as in-progress before running any customer's steps as much as we can.
-          // Timeline record update background process runs every 500ms, so delay 1000ms is enough for most of the cases
-          Trace.Info($"Waiting for job to be marked as started.");
-          await Task.WhenAny(_jobServerQueue.JobRecordUpdated.Task, Task.Delay(1000));
-        }
+                if (systemConnection.Data.TryGetValue("GenerateIdTokenUrl", out var generateIdTokenUrl) &&
+                    !string.IsNullOrEmpty(generateIdTokenUrl))
+                {
+                    // Server won't issue ID_TOKEN for non-inprogress job.
+                    // If the job is trying to use OIDC feature, we want the job to be marked as in-progress before running any customer's steps as much as we can.
+                    // Timeline record update background process runs every 500ms, so delay 1000ms is enough for most of the cases
+                    Trace.Info($"Waiting for job to be marked as started.");
+                    await Task.WhenAny(_jobServerQueue.JobRecordUpdated.Task, Task.Delay(1000));
+                }
+
+                // Wait for DAP debugger client connection and handshake after "Set up job"
+                // so the job page shows the setup step before we block on the debugger
+                if (dapDebugger != null)
+                {
+                    try
+                    {
+                        await dapDebugger.WaitUntilReadyAsync();
+                        AddDebuggerConnectionTelemetry(jobContext, "Connected");
+                    }
+                    catch (OperationCanceledException) when (jobRequestCancellationToken.IsCancellationRequested)
+                    {
+                        Trace.Info("Job was cancelled before debugger client connected.");
+                        AddDebuggerConnectionTelemetry(jobContext, "Canceled");
+                        jobContext.Error("Job was cancelled before debugger client connected.");
+                        return await CompleteJobAsync(server, jobContext, message, TaskResult.Canceled);
+                    }
+                    catch (Exception ex)
+                    {
+                        Trace.Error($"DAP debugger failed to become ready: {ex.Message}");
+                        AddDebuggerConnectionTelemetry(jobContext, $"Failed: {ex.Message}");
+
+                        // If debugging was requested but the debugger is not available, fail the job
+                        jobContext.Error("The debugger failed to start or no debugger client connected in time.");
+                        return await CompleteJobAsync(server, jobContext, message, TaskResult.Failed);
+                    }
+                }
 
         // Run all job steps
         Trace.Info("Run all job steps.");
@@ -266,9 +308,14 @@ namespace GitHub.Runner.Worker
           await runnerShutdownRegistration.Value.DisposeAsync();
         }
 
-        await ShutdownQueue(throwOnFailure: false);
-      }
-    }
+                if (dapDebugger != null)
+                {
+                    await dapDebugger.OnJobCompletedAsync();
+                }
+
+                await ShutdownQueue(throwOnFailure: false);
+            }
+        }
 
     private async Task<TaskResult> CompleteJobAsync(IRunnerService server, IExecutionContext jobContext, Pipelines.AgentJobRequestMessage message, TaskResult? taskResult = null)
     {
@@ -447,13 +494,22 @@ namespace GitHub.Runner.Worker
       throw new AggregateException(exceptions);
     }
 
-    private void MaskTelemetrySecrets(List<JobTelemetry> jobTelemetry)
-    {
-      foreach (var telemetryItem in jobTelemetry)
-      {
-        telemetryItem.Message = HostContext.SecretMasker.MaskSecrets(telemetryItem.Message);
-      }
-    }
+        private static void AddDebuggerConnectionTelemetry(IExecutionContext jobContext, string result)
+        {
+            jobContext.Global.JobTelemetry.Add(new JobTelemetry
+            {
+                Type = JobTelemetryType.General,
+                Message = $"{DebuggerConnectionTelemetryPrefix}: {result}"
+            });
+        }
+
+        private void MaskTelemetrySecrets(List<JobTelemetry> jobTelemetry)
+        {
+            foreach (var telemetryItem in jobTelemetry)
+            {
+                telemetryItem.Message = HostContext.SecretMasker.MaskSecrets(telemetryItem.Message);
+            }
+        }
 
     private void LoadFromTelemetryFile(List<JobTelemetry> jobTelemetry)
     {
