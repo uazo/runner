@@ -1,40 +1,35 @@
-﻿using GitHub.DistributedTask.WebApi;
+﻿using System.Threading.Tasks;
+using GitHub.DistributedTask.Pipelines.ContextData;
+using GitHub.DistributedTask.WebApi;
 using GitHub.Runner.Worker;
 using Moq;
-using System;
-using System.Collections.Generic;
-using System.Runtime.CompilerServices;
-using System.Threading.Tasks;
 using Xunit;
-using System.Threading;
 using Pipelines = GitHub.DistributedTask.Pipelines;
-using GitHub.DistributedTask.Pipelines.ContextData;
-using Microsoft.VisualStudio.TestPlatform.CommunicationUtilities;
 
 namespace GitHub.Runner.Common.Tests.Worker
 {
-	public class JobRunnerL0_Uazo : JobRunnerL0
-	{
-		private static void AddActorToMessage(Pipelines.AgentJobRequestMessage message, string Actor)
-		{
-			DictionaryContextData gitHub = null;
-			if (message.ContextData.TryGetValue("github", out PipelineContextData value))
-				gitHub = value as DictionaryContextData;
+  public class JobRunnerL0_Uazo : JobRunnerL0
+  {
+    private static void AddActorToMessage(Pipelines.AgentJobRequestMessage message, string Actor)
+    {
+      DictionaryContextData gitHub = null;
+      if (message.ContextData.TryGetValue("github", out PipelineContextData value))
+        gitHub = value as DictionaryContextData;
 
-			if (gitHub == null)
-			{
-				gitHub = [];
-				message.ContextData.Add("github", gitHub);
-			}
-			if (Actor != null)
-				gitHub["actor"] = new StringContextData(Actor);
-		}
+      if (gitHub == null)
+      {
+        gitHub = [];
+        message.ContextData.Add("github", gitHub);
+      }
+      if (Actor != null)
+        gitHub["actor"] = new StringContextData(Actor);
+    }
 
-		[Fact]
-		[Trait("Level", "L0")]
-		[Trait("Category", "Worker")]
-		public async Task WorksWithRunnerJobRequestMessageType()
-		{
+    [Fact]
+    [Trait("Level", "L0")]
+    [Trait("Category", "Worker")]
+    public async Task WorksWithRunnerJobRequestMessageType()
+    {
       using TestHostContext hc = CreateTestContext(
                 overrideSettings: x => x.RequestSecuritySettings = new RequestSecuritySettings()
                 {
@@ -46,11 +41,11 @@ namespace GitHub.Runner.Common.Tests.Worker
       Assert.Equal(TaskResult.Succeeded, _jobEc.Result);
     }
 
-		[Fact]
-		[Trait("Level", "L0")]
-		[Trait("Category", "Worker")]
-		public async Task JobExtensionInitializeNotAllowed_WithoutConfig()
-		{
+    [Fact]
+    [Trait("Level", "L0")]
+    [Trait("Category", "Worker")]
+    public async Task JobExtensionInitializeNotAllowed_WithoutConfig()
+    {
       using TestHostContext hc = CreateTestContext();
       var message = GetMessage(JobRequestMessageTypes.RunnerJobRequest);
       await _jobRunner.RunAsync(message, _tokenSource.Token);
@@ -59,11 +54,11 @@ namespace GitHub.Runner.Common.Tests.Worker
       _stepRunner.Verify(x => x.RunAsync(It.IsAny<IExecutionContext>()), Times.Never);
     }
 
-		[Fact]
-		[Trait("Level", "L0")]
-		[Trait("Category", "Worker")]
-		public async Task JobExtensionInitializeNotAllowed_WithoutActor()
-		{
+    [Fact]
+    [Trait("Level", "L0")]
+    [Trait("Category", "Worker")]
+    public async Task JobExtensionInitializeNotAllowed_WithoutActor()
+    {
       using TestHostContext hc = CreateTestContext(
         overrideSettings: x => x.RequestSecuritySettings = new RequestSecuritySettings()
         {
@@ -76,11 +71,11 @@ namespace GitHub.Runner.Common.Tests.Worker
       _stepRunner.Verify(x => x.RunAsync(It.IsAny<IExecutionContext>()), Times.Never);
     }
 
-		[Fact]
-		[Trait("Level", "L0")]
-		[Trait("Category", "Worker")]
-		public async Task JobExtensionInitializeNotAllowed_ActorNotAllowed()
-		{
+    [Fact]
+    [Trait("Level", "L0")]
+    [Trait("Category", "Worker")]
+    public async Task JobExtensionInitializeNotAllowed_ActorNotAllowed()
+    {
       using TestHostContext hc = CreateTestContext(
         overrideSettings: x => x.RequestSecuritySettings = new RequestSecuritySettings()
         {
@@ -94,11 +89,11 @@ namespace GitHub.Runner.Common.Tests.Worker
       _stepRunner.Verify(x => x.RunAsync(It.IsAny<IExecutionContext>()), Times.Never);
     }
 
-		[Fact]
-		[Trait("Level", "L0")]
-		[Trait("Category", "Worker")]
-		public async Task JobExtensionInitializeNotAllowed_ActorAllowed()
-		{
+    [Fact]
+    [Trait("Level", "L0")]
+    [Trait("Category", "Worker")]
+    public async Task JobExtensionInitializeNotAllowed_ActorAllowed()
+    {
       using TestHostContext hc = CreateTestContext(
         overrideSettings: x => x.RequestSecuritySettings = new RequestSecuritySettings()
         {
@@ -111,5 +106,5 @@ namespace GitHub.Runner.Common.Tests.Worker
       Assert.Equal(TaskResult.Succeeded, _jobEc.Result);
       _stepRunner.Verify(x => x.RunAsync(It.IsAny<IExecutionContext>()), Times.Once);
     }
-	}
+  }
 }
