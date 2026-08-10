@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -11,7 +11,9 @@ using Moq;
 using GitHub.Runner.Worker;
 using GitHub.Runner.Worker.Dap;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Xunit;
+using Pipelines = GitHub.DistributedTask.Pipelines;
 
 namespace GitHub.Runner.Common.Tests.Worker
 {
@@ -236,7 +238,7 @@ namespace GitHub.Runner.Common.Tests.Worker
             }
         }
 
-        private static Mock<IExecutionContext> CreateJobContextWithTunnel(CancellationToken cancellationToken, ushort port, string jobName = null)
+        private static Mock<IExecutionContext> CreateJobContextWithTunnel(CancellationToken cancellationToken, ushort port, string jobName = null, bool overrideWelcomeMessage = false, string welcomeMessage = null)
         {
             var tunnel = new GitHub.DistributedTask.Pipelines.DebuggerTunnelInfo
             {
@@ -245,7 +247,7 @@ namespace GitHub.Runner.Common.Tests.Worker
                 HostToken = "test-token",
                 Port = port
             };
-            var debuggerConfig = new DebuggerConfig(true, tunnel);
+            var debuggerConfig = new DebuggerConfig(true, tunnel, overrideWelcomeMessage, welcomeMessage);
             var jobContext = new Mock<IExecutionContext>();
             jobContext.Setup(x => x.CancellationToken).Returns(cancellationToken);
             jobContext.Setup(x => x.Global).Returns(new GlobalContext { Debugger = debuggerConfig });
@@ -253,6 +255,78 @@ namespace GitHub.Runner.Common.Tests.Worker
                 .Setup(x => x.GetGitHubContext(It.IsAny<string>()))
                 .Returns((string contextName) => string.Equals(contextName, "job", StringComparison.Ordinal) ? jobName : null);
             return jobContext;
+        }
+
+        private static Mock<IStep> CreateStep(string displayName, ActionRunStage? stage = null)
+        {
+            var step = new Mock<IStep>();
+            step.Setup(s => s.DisplayName).Returns(displayName);
+            if (stage.HasValue)
+            {
+                var executionContext = new Mock<IExecutionContext>();
+                executionContext.Setup(x => x.Stage).Returns(stage.Value);
+                step.Setup(s => s.ExecutionContext).Returns(executionContext.Object);
+            }
+            else
+            {
+                step.Setup(s => s.ExecutionContext).Returns((IExecutionContext)null);
+            }
+
+            return step;
+        }
+
+        private static Mock<IActionRunner> CreateActionRunner(string displayName, ActionRunStage stage, Pipelines.ActionStep action)
+        {
+            var executionContext = new Mock<IExecutionContext>();
+            executionContext.Setup(x => x.Stage).Returns(stage);
+
+            var runner = new Mock<IActionRunner>();
+            runner.Setup(s => s.DisplayName).Returns(displayName);
+            runner.Setup(s => s.ExecutionContext).Returns(executionContext.Object);
+            runner.Setup(s => s.Stage).Returns(stage);
+            runner.Setup(s => s.Action).Returns(action);
+            return runner;
+        }
+
+        private static Pipelines.ActionStep CreateRepositoryActionStep(string name)
+        {
+            return new Pipelines.ActionStep
+            {
+                Id = Guid.NewGuid(),
+                Name = name,
+                Reference = new Pipelines.RepositoryPathReference
+                {
+                    Name = name,
+                    Ref = "v1",
+                    RepositoryType = Pipelines.RepositoryTypes.GitHub
+                }
+            };
+        }
+
+        private static Definition CreateActionDefinitionWithPost()
+        {
+            return new Definition
+            {
+                Data = new ActionDefinitionData
+                {
+                    Execution = new NodeJSActionExecutionData
+                    {
+                        Script = "main.js",
+                        Post = "post.js"
+                    }
+                }
+            };
+        }
+
+        private static Request MakeRequest(string command, object arguments)
+        {
+            return new Request
+            {
+                Seq = 1,
+                Type = "request",
+                Command = command,
+                Arguments = JObject.FromObject(arguments)
+            };
         }
 
         [Fact]
@@ -721,6 +795,325 @@ namespace GitHub.Runner.Common.Tests.Worker
         [Fact]
         [Trait("Level", "L0")]
         [Trait("Category", "Worker")]
+        public async Task HandleSourceReturnsJobStepsSource()
+        {
+            using (var hc = CreateTestContext())
+            {
+                hc.SecretMasker.AddValue("secret-step");
+                var port = GetFreePort();
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                var jobContext = CreateJobContextWithTunnel(cts.Token, port);
+                await _debugger.StartAsync(jobContext.Object);
+
+                var waitTask = _debugger.WaitUntilReadyAsync();
+                using var client = await ConnectClientAsync(port);
+                var stream = client.GetStream();
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 1,
+                    Type = "request",
+                    Command = "configurationDone"
+                });
+                await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                await waitTask;
+
+                var pre = CreateStep("Pre cache", ActionRunStage.Pre);
+                var checkout = CreateStep("Checkout");
+                var secret = CreateStep("secret-step");
+                var post = CreateStep("Post cache", ActionRunStage.Post);
+                await _debugger.OnJobStepsInitializedAsync(
+                    new[] { pre.Object, checkout.Object, secret.Object },
+                    new[] { post.Object });
+
+                var response = _debugger.HandleSource(MakeRequest(
+                    "source",
+                    new SourceArguments { SourceReference = 1 }));
+
+                Assert.True(response.Success);
+                var body = Assert.IsType<SourceResponseBody>(response.Body);
+                Assert.Equal(
+                    "pre:\n  - step: \"Set up job\"\n  - step: \"Pre cache\"\n\nmain:\n  - step: \"Checkout\"\n  - step: \"***\"\n\npost:\n  - step: \"Post cache\"\n  - step: \"Complete job\"\n",
+                    body.Content);
+                Assert.Null(body.MimeType);
+
+                await _debugger.StopAsync();
+            }
+        }
+
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", "Worker")]
+        public async Task StackTraceUsesJobStepsSourceLine()
+        {
+            using (CreateTestContext())
+            {
+                var port = GetFreePort();
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                var jobContext = CreateJobContextWithTunnel(cts.Token, port);
+                await _debugger.StartAsync(jobContext.Object);
+
+                var waitTask = _debugger.WaitUntilReadyAsync();
+                using var client = await ConnectClientAsync(port);
+                var stream = client.GetStream();
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 1,
+                    Type = "request",
+                    Command = "configurationDone"
+                });
+                await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                await waitTask;
+
+                var checkout = CreateStep("Checkout");
+                var build = CreateStep("Build");
+                await _debugger.OnJobStepsInitializedAsync(
+                    new[] { checkout.Object, build.Object },
+                    Array.Empty<IStep>());
+
+                var stepTask = _debugger.OnStepStartingAsync(build.Object);
+                var stoppedEvent = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                Assert.Contains("\"event\":\"stopped\"", stoppedEvent);
+
+                var bannerEvent = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                Assert.Contains("\"event\":\"output\"", bannerEvent);
+
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 2,
+                    Type = "request",
+                    Command = "stackTrace"
+                });
+
+                var stackTraceJson = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                var stackTrace = JObject.Parse(stackTraceJson);
+                var frame = stackTrace["body"]?["stackFrames"]?[0];
+
+                Assert.NotNull(frame);
+                Assert.Equal(6, frame["line"].Value<int>());
+                Assert.Equal(1, frame["source"]["sourceReference"].Value<int>());
+                Assert.Equal("execution.yml", frame["source"]["name"].Value<string>());
+
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 3,
+                    Type = "request",
+                    Command = "continue"
+                });
+                await stepTask;
+
+                await _debugger.StopAsync();
+            }
+        }
+
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", "Worker")]
+        public async Task StackTraceOmitsSourceForUnmappedCurrentStep()
+        {
+            using (CreateTestContext())
+            {
+                var port = GetFreePort();
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                var jobContext = CreateJobContextWithTunnel(cts.Token, port);
+                await _debugger.StartAsync(jobContext.Object);
+
+                var waitTask = _debugger.WaitUntilReadyAsync();
+                using var client = await ConnectClientAsync(port);
+                var stream = client.GetStream();
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 1,
+                    Type = "request",
+                    Command = "configurationDone"
+                });
+                await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                await waitTask;
+
+                var checkout = CreateStep("Checkout");
+                var build = CreateStep("Build");
+                await _debugger.OnJobStepsInitializedAsync(
+                    new[] { checkout.Object },
+                    Array.Empty<IStep>());
+
+                var stepTask = _debugger.OnStepStartingAsync(build.Object);
+                await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 2,
+                    Type = "request",
+                    Command = "stackTrace"
+                });
+
+                var stackTraceJson = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                var stackTrace = JObject.Parse(stackTraceJson);
+                var frame = stackTrace["body"]?["stackFrames"]?[0];
+
+                Assert.NotNull(frame);
+                Assert.Equal(0, frame["line"].Value<int>());
+                Assert.Null(frame["source"]);
+
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 3,
+                    Type = "request",
+                    Command = "continue"
+                });
+                await stepTask;
+
+                await _debugger.StopAsync();
+            }
+        }
+
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", "Worker")]
+        public async Task PredictedPostStepIsServedAtInitializationAndClaimedAtRegistration()
+        {
+            using (var hc = CreateTestContext())
+            {
+                var action = CreateRepositoryActionStep("actions/cache");
+                var actionManager = new Mock<IActionManager>();
+                actionManager
+                    .Setup(x => x.LoadAction(It.IsAny<IExecutionContext>(), action))
+                    .Returns(CreateActionDefinitionWithPost());
+                hc.SetSingleton<IActionManager>(actionManager.Object);
+
+                var port = GetFreePort();
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                var jobContext = CreateJobContextWithTunnel(cts.Token, port);
+                await _debugger.StartAsync(jobContext.Object);
+
+                var waitTask = _debugger.WaitUntilReadyAsync();
+                using var client = await ConnectClientAsync(port);
+                var stream = client.GetStream();
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 1,
+                    Type = "request",
+                    Command = "configurationDone"
+                });
+                await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                await waitTask;
+
+                var checkout = CreateActionRunner("Checkout", ActionRunStage.Main, action);
+                await _debugger.OnJobStepsInitializedAsync(
+                    new[] { checkout.Object },
+                    Array.Empty<IStep>());
+
+                var sourceResponse = _debugger.HandleSource(MakeRequest(
+                    "source",
+                    new SourceArguments { SourceReference = 1 }));
+                var sourceBody = Assert.IsType<SourceResponseBody>(sourceResponse.Body);
+                Assert.Equal(
+                    "pre:\n  - step: \"Set up job\"\n\nmain:\n  - step: \"Checkout\"\n\npost:\n  - step: \"Post Checkout\"\n  - step: \"Complete job\"\n",
+                    sourceBody.Content);
+
+                var post = CreateActionRunner("Post Checkout", ActionRunStage.Post, action);
+                _debugger.OnPostStepRegistered(post.Object);
+
+                var stepTask = _debugger.OnStepStartingAsync(post.Object);
+                var stoppedEvent = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                Assert.Contains("\"event\":\"stopped\"", stoppedEvent);
+
+                var bannerEvent = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                Assert.Contains("\"event\":\"output\"", bannerEvent);
+
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 2,
+                    Type = "request",
+                    Command = "stackTrace"
+                });
+
+                var stackTraceJson = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                var stackTrace = JObject.Parse(stackTraceJson);
+                var frame = stackTrace["body"]?["stackFrames"]?[0];
+
+                Assert.NotNull(frame);
+                Assert.Equal(8, frame["line"].Value<int>());
+                Assert.Equal(1, frame["source"]["sourceReference"].Value<int>());
+
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 3,
+                    Type = "request",
+                    Command = "continue"
+                });
+                await stepTask;
+
+                await _debugger.StopAsync();
+            }
+        }
+
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", "Worker")]
+        public async Task StackTraceSanitizesSyntheticSourcePath()
+        {
+            using (CreateTestContext())
+            {
+                var port = GetFreePort();
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                var jobContext = CreateJobContextWithTunnel(cts.Token, port, jobName: "my/job\\name");
+                await _debugger.StartAsync(jobContext.Object);
+
+                var waitTask = _debugger.WaitUntilReadyAsync();
+                using var client = await ConnectClientAsync(port);
+                var stream = client.GetStream();
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 1,
+                    Type = "request",
+                    Command = "configurationDone"
+                });
+                await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                await waitTask;
+
+                var checkout = CreateStep("Checkout");
+                await _debugger.OnJobStepsInitializedAsync(
+                    new[] { checkout.Object },
+                    Array.Empty<IStep>());
+
+                var stepTask = _debugger.OnStepStartingAsync(checkout.Object);
+                await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 2,
+                    Type = "request",
+                    Command = "stackTrace"
+                });
+
+                var stackTraceJson = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                var stackTrace = JObject.Parse(stackTraceJson);
+                var frame = stackTrace["body"]?["stackFrames"]?[0];
+
+                Assert.NotNull(frame);
+                Assert.Equal("my_job_name/execution.yml", frame["source"]["path"].Value<string>());
+
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 3,
+                    Type = "request",
+                    Command = "continue"
+                });
+                await stepTask;
+
+                await _debugger.StopAsync();
+            }
+        }
+
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", "Worker")]
         public async Task OnJobCompletedSendsTerminatedAndExitedEvents()
         {
             using (CreateTestContext())
@@ -742,18 +1135,121 @@ namespace GitHub.Runner.Common.Tests.Worker
 
                 // Read the configurationDone response
                 await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                // Read the welcome message output event
+                await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
                 await waitTask;
 
-                // Complete the job — events are sent via OnJobCompletedAsync
-                await _debugger.OnJobCompletedAsync();
+                var checkout = CreateStep("Checkout");
+                await _debugger.OnJobStepsInitializedAsync(
+                    new[] { checkout.Object },
+                    Array.Empty<IStep>());
 
-                var msg1 = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
-                var msg2 = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                // Complete the job — OnJobCompletedAsync pauses when stepping,
+                // so run it in the background and send continue to unblock.
+                var completedTask = _debugger.OnJobCompletedAsync();
 
-                // Both events should arrive (order may vary)
-                var combined = msg1 + msg2;
+                // Read the stopped event from the pause
+                var stoppedMsg = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                Assert.Contains("\"event\":\"stopped\"", stoppedMsg);
+
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 2,
+                    Type = "request",
+                    Command = "stackTrace"
+                });
+
+                var stackTraceJson = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                var stackTrace = JObject.Parse(stackTraceJson);
+                var frame = stackTrace["body"]?["stackFrames"]?[0];
+
+                Assert.NotNull(frame);
+                Assert.Equal("Complete job [completed]", frame["name"].Value<string>());
+                Assert.Equal(8, frame["line"].Value<int>());
+                Assert.Equal(1, frame["source"]["sourceReference"].Value<int>());
+
+                // Send continue to unblock the pause
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 3,
+                    Type = "request",
+                    Command = "continue"
+                });
+
+                await completedTask;
+
+                // Read remaining messages — continue response + continued event + terminated + exited
+                var allMessages = new System.Text.StringBuilder();
+                for (int i = 0; i < 4; i++)
+                {
+                    allMessages.Append(await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5)));
+                }
+
+                var combined = allMessages.ToString();
                 Assert.Contains("\"event\":\"terminated\"", combined);
                 Assert.Contains("\"event\":\"exited\"", combined);
+            }
+        }
+
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", "Worker")]
+        public async Task OnJobCompletedUsesSyntheticCompleteJobLineWhenPostStepSharesName()
+        {
+            using (CreateTestContext())
+            {
+                var port = GetFreePort();
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                var jobContext = CreateJobContextWithTunnel(cts.Token, port);
+                await _debugger.StartAsync(jobContext.Object);
+
+                var waitTask = _debugger.WaitUntilReadyAsync();
+                using var client = await ConnectClientAsync(port);
+                var stream = client.GetStream();
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 1,
+                    Type = "request",
+                    Command = "configurationDone"
+                });
+
+                await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                await waitTask;
+
+                var checkout = CreateStep("Checkout");
+                var realPost = CreateStep("Complete job", ActionRunStage.Post);
+                await _debugger.OnJobStepsInitializedAsync(
+                    new[] { checkout.Object },
+                    new[] { realPost.Object });
+
+                var completedTask = _debugger.OnJobCompletedAsync();
+
+                await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 2,
+                    Type = "request",
+                    Command = "stackTrace"
+                });
+
+                var stackTraceJson = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                var stackTrace = JObject.Parse(stackTraceJson);
+                var frame = stackTrace["body"]?["stackFrames"]?[0];
+
+                Assert.NotNull(frame);
+                Assert.Equal("Complete job [completed]", frame["name"].Value<string>());
+                Assert.Equal(9, frame["line"].Value<int>());
+
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 3,
+                    Type = "request",
+                    Command = "continue"
+                });
+
+                await completedTask;
             }
         }
 
@@ -807,6 +1303,267 @@ namespace GitHub.Runner.Common.Tests.Worker
                 {
                     Assert.Equal(30, _debugger.ResolveTunnelConnectTimeout());
                 });
+            }
+        }
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", "Worker")]
+        public async Task WaitForCommandAsyncUnblocksOnCancellationDuringWait()
+        {
+            using (CreateTestContext())
+            {
+                var port = GetFreePort();
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                var jobContext = CreateJobContextWithTunnel(cts.Token, port);
+                await _debugger.StartAsync(jobContext.Object);
+
+                var waitTask = _debugger.WaitUntilReadyAsync();
+                using var client = await ConnectClientAsync(port);
+                var stream = client.GetStream();
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 1,
+                    Type = "request",
+                    Command = "configurationDone"
+                });
+
+                await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                // Read the welcome message output event
+                await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                await waitTask;
+
+                // Start OnJobCompletedAsync — it will pause because _pauseOnNextStep is true
+                var completedTask = _debugger.OnJobCompletedAsync();
+
+                // Read the stopped event
+                var stoppedMsg = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                Assert.Contains("\"event\":\"stopped\"", stoppedMsg);
+
+                // Cancel the job while waiting — should unblock the pause
+                cts.Cancel();
+
+                // OnJobCompletedAsync should complete without hanging
+                var finished = await Task.WhenAny(completedTask, Task.Delay(TimeSpan.FromSeconds(5)));
+                Assert.Equal(completedTask, finished);
+            }
+        }
+
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", "Worker")]
+        public async Task WelcomeMessageSendsDefaultHelpWhenOverrideDisabled()
+        {
+            using (CreateTestContext())
+            {
+                var port = GetFreePort();
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                var jobContext = CreateJobContextWithTunnel(cts.Token, port);
+                await _debugger.StartAsync(jobContext.Object);
+
+                using var client = await ConnectClientAsync(port);
+                var stream = client.GetStream();
+
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 1,
+                    Type = "request",
+                    Command = "configurationDone"
+                });
+
+                // First message: configurationDone response
+                var configDoneResponse = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                Assert.Contains("\"command\":\"configurationDone\"", configDoneResponse);
+
+                // Second message: welcome output event with default help text
+                var welcomeMsg = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                Assert.Contains("\"event\":\"output\"", welcomeMsg);
+                Assert.Contains("\"category\":\"console\"", welcomeMsg);
+                Assert.Contains("Actions Debug Console", welcomeMsg);
+                Assert.Contains("help", welcomeMsg);
+
+                await _debugger.StopAsync();
+            }
+        }
+
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", "Worker")]
+        public async Task WelcomeMessageShowsCustomMessageWhenOverrideEnabled()
+        {
+            using (CreateTestContext())
+            {
+                var port = GetFreePort();
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                var jobContext = CreateJobContextWithTunnel(cts.Token, port,
+                    overrideWelcomeMessage: true,
+                    welcomeMessage: "Welcome to debugging!");
+                await _debugger.StartAsync(jobContext.Object);
+
+                using var client = await ConnectClientAsync(port);
+                var stream = client.GetStream();
+
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 1,
+                    Type = "request",
+                    Command = "configurationDone"
+                });
+
+                // First: configurationDone response
+                var configDoneResponse = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                Assert.Contains("\"command\":\"configurationDone\"", configDoneResponse);
+
+                // Second: custom welcome message
+                var welcomeMsg = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                Assert.Contains("\"event\":\"output\"", welcomeMsg);
+                Assert.Contains("Welcome to debugging!", welcomeMsg);
+
+                await _debugger.StopAsync();
+            }
+        }
+
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", "Worker")]
+        public async Task WelcomeMessageSuppressedWhenOverrideEnabledWithEmptyMessage()
+        {
+            using (CreateTestContext())
+            {
+                var port = GetFreePort();
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                var jobContext = CreateJobContextWithTunnel(cts.Token, port,
+                    overrideWelcomeMessage: true,
+                    welcomeMessage: "");
+                await _debugger.StartAsync(jobContext.Object);
+
+                using var client = await ConnectClientAsync(port);
+                var stream = client.GetStream();
+
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 1,
+                    Type = "request",
+                    Command = "configurationDone"
+                });
+
+                // Read configurationDone response
+                var configDoneResponse = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                Assert.Contains("\"command\":\"configurationDone\"", configDoneResponse);
+
+                // Send threads request — if welcome message was suppressed, this
+                // should be the next response (no output event in between)
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 2,
+                    Type = "request",
+                    Command = "threads"
+                });
+
+                var threadsResponse = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                Assert.Contains("\"command\":\"threads\"", threadsResponse);
+
+                await _debugger.StopAsync();
+            }
+        }
+
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", "Worker")]
+        public async Task WelcomeMessageSuppressedWhenOverrideEnabledWithNullMessage()
+        {
+            using (CreateTestContext())
+            {
+                var port = GetFreePort();
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                var jobContext = CreateJobContextWithTunnel(cts.Token, port,
+                    overrideWelcomeMessage: true,
+                    welcomeMessage: null);
+                await _debugger.StartAsync(jobContext.Object);
+
+                using var client = await ConnectClientAsync(port);
+                var stream = client.GetStream();
+
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 1,
+                    Type = "request",
+                    Command = "configurationDone"
+                });
+
+                // Read configurationDone response
+                var configDoneResponse = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                Assert.Contains("\"command\":\"configurationDone\"", configDoneResponse);
+
+                // Send threads request — if welcome message was suppressed, this
+                // should be the next response (no output event in between)
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 2,
+                    Type = "request",
+                    Command = "threads"
+                });
+
+                var threadsResponse = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                Assert.Contains("\"command\":\"threads\"", threadsResponse);
+
+                await _debugger.StopAsync();
+            }
+        }
+
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", "Worker")]
+        public async Task WelcomeMessageSentOnlyOnce()
+        {
+            using (CreateTestContext())
+            {
+                var port = GetFreePort();
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                var jobContext = CreateJobContextWithTunnel(cts.Token, port);
+                await _debugger.StartAsync(jobContext.Object);
+
+                using var client = await ConnectClientAsync(port);
+                var stream = client.GetStream();
+
+                // First configurationDone
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 1,
+                    Type = "request",
+                    Command = "configurationDone"
+                });
+
+                var configDoneResponse = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                Assert.Contains("\"command\":\"configurationDone\"", configDoneResponse);
+
+                // Welcome message should appear
+                var welcomeMsg = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                Assert.Contains("\"event\":\"output\"", welcomeMsg);
+                Assert.Contains("Actions Debug Console", welcomeMsg);
+
+                // Second configurationDone — should NOT produce another welcome message
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 2,
+                    Type = "request",
+                    Command = "configurationDone"
+                });
+
+                var secondResponse = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                Assert.Contains("\"command\":\"configurationDone\"", secondResponse);
+
+                // Next message should be threads response, not another welcome output
+                await SendRequestAsync(stream, new Request
+                {
+                    Seq = 3,
+                    Type = "request",
+                    Command = "threads"
+                });
+
+                var threadsResponse = await ReadDapMessageAsync(stream, TimeSpan.FromSeconds(5));
+                Assert.Contains("\"command\":\"threads\"", threadsResponse);
+
+                await _debugger.StopAsync();
             }
         }
     }

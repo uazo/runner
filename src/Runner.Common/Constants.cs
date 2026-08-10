@@ -180,6 +180,9 @@ namespace GitHub.Runner.Common
                 public static readonly string EmitCompositeMarkers = "actions_runner_emit_composite_markers";
                 public static readonly string BatchActionResolution = "actions_batch_action_resolution";
                 public static readonly string UseBearerTokenForCodeload = "actions_use_bearer_token_for_codeload";
+                public static readonly string OverrideDebuggerWelcomeMessage = "actions_runner_override_debugger_welcome_message";
+                public static readonly string AllowArtifactsFile = "actions_runner_allow_artifacts_file";
+                public static readonly string SelfRepository = "actions_self_repository";
             }
 
             // Node version migration related constants
@@ -206,7 +209,7 @@ namespace GitHub.Runner.Common
                 public static readonly string Node20DeprecationUrl = "https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/";
 
                 // Node 20 migration dates (hardcoded fallbacks, can be overridden via job variables)
-                public static readonly string Node24DefaultDate = "June 2nd, 2026";
+                public static readonly string Node24DefaultDate = "June 16th, 2026";
                 public static readonly string Node20RemovalDate = "September 16th, 2026";
 
                 // Variable keys for server-overridable dates
@@ -227,6 +230,12 @@ namespace GitHub.Runner.Common
             public static readonly string UnsupportedStopCommandTokenDisabled = "You cannot use a endToken that is an empty string, the string 'pause-logging', or another workflow command. For more information see: https://docs.github.com/actions/learn-github-actions/workflow-commands-for-github-actions#example-stopping-and-starting-workflow-commands or opt into insecure command execution by setting the `ACTIONS_ALLOW_UNSECURE_STOPCOMMAND_TOKENS` environment variable to `true`.";
             public static readonly string UnsupportedSummarySize = "$GITHUB_STEP_SUMMARY upload aborted, supports content up to a size of {0}k, got {1}k. For more information see: https://docs.github.com/actions/using-workflows/workflow-commands-for-github-actions#adding-a-markdown-summary";
             public static readonly string SummaryUploadError = "$GITHUB_STEP_SUMMARY upload aborted, an error occurred when uploading the summary. For more information see: https://docs.github.com/actions/using-workflows/workflow-commands-for-github-actions#adding-a-markdown-summary";
+
+            // $GITHUB_ARTIFACTS file command
+            public static readonly string ArtifactsFileSizeExceeded = "$GITHUB_ARTIFACTS file exceeds the maximum size of {0} KiB (got {1} KiB).";
+            public static readonly string ArtifactsAggregateLimitExceeded = "The job has exceeded the maximum of {0} declared artifacts.";
+            public static readonly string ArtifactsInvalidLine = "Invalid $GITHUB_ARTIFACTS entry on line {0}: {1}";
+            public static readonly string ArtifactsConflictingDigest = "Conflicting digest for artifact '{0}': previously declared as '{1}', now declared as '{2}'.";
         }
 
         public static class RunnerEvent
@@ -308,6 +317,7 @@ namespace GitHub.Runner.Common
                 public static readonly string ForcedInternalNodeVersion = "ACTIONS_RUNNER_FORCED_INTERNAL_NODE_VERSION";
                 public static readonly string ForcedActionsNodeVersion = "ACTIONS_RUNNER_FORCE_ACTIONS_NODE_VERSION";
                 public static readonly string PrintLogToStdout = "ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT";
+                public static readonly string DisableStdoutMultilineLogPrefixing = "ACTIONS_RUNNER_DISABLE_STDOUT_MULTILINE_LOG_PREFIXING";
                 public static readonly string ActionArchiveCacheDirectory = "ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE";
                 public static readonly string SymlinkCachedActions = "ACTIONS_RUNNER_SYMLINK_CACHED_ACTIONS";
                 public static readonly string EmitCompositeMarkers = "ACTIONS_RUNNER_EMIT_COMPOSITE_MARKERS";

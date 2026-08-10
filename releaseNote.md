@@ -1,36 +1,32 @@
 ## What's Changed
-* Bump flatted from 3.2.7 to 3.4.2 in /src/Misc/expressionFunc/hashFiles by @dependabot[bot] in https://github.com/actions/runner/pull/4307
-* Add DAP server by @rentziass in https://github.com/actions/runner/pull/4298
-* Bump @typescript-eslint/eslint-plugin from 8.57.1 to 8.57.2 in /src/Misc/expressionFunc/hashFiles by @dependabot[bot] in https://github.com/actions/runner/pull/4310
-* Remove AllowCaseFunction feature flag by @ericsciple in https://github.com/actions/runner/pull/4316
-* chore: update Node versions by @github-actions[bot] in https://github.com/actions/runner/pull/4319
-* Batch and deduplicate action resolution across composite depths by @stefanpenner in https://github.com/actions/runner/pull/4296
-* Add support for Bearer token in action archive downloads by @TingluoHuang in https://github.com/actions/runner/pull/4321
-* Bump brace-expansion in /src/Misc/expressionFunc/hashFiles by @dependabot[bot] in https://github.com/actions/runner/pull/4318
-* Add devtunnel connection for debugger jobs by @rentziass in https://github.com/actions/runner/pull/4317
-* Update Docker to v29.3.1 and Buildx to v0.33.0 by @github-actions[bot] in https://github.com/actions/runner/pull/4324
-* Bump @typescript-eslint/eslint-plugin from 8.57.2 to 8.58.1 in /src/Misc/expressionFunc/hashFiles by @dependabot[bot] in https://github.com/actions/runner/pull/4327
-* Bump actions/github-script from 8 to 9 by @dependabot[bot] in https://github.com/actions/runner/pull/4331
-* Bump typescript from 5.9.3 to 6.0.2 in /src/Misc/expressionFunc/hashFiles by @dependabot[bot] in https://github.com/actions/runner/pull/4329
-* fix: only show changed versions in node upgrade PR description by @salmanmkc in https://github.com/actions/runner/pull/4332
-* Bump System.Formats.Asn1, Cryptography.Pkcs, ProtectedData, ServiceController, CodePages, Threading.Channels, @actions/glob, @typescript-eslint/parser, lint-staged, picomatch by @Copilot in https://github.com/actions/runner/pull/4333
-* feat: add `job.workflow_*` typed accessors to JobContext by @salmanmkc in https://github.com/actions/runner/pull/4335
-* Add WS bridge over DAP TCP server by @rentziass in https://github.com/actions/runner/pull/4328
-* chore: update Node versions by @github-actions[bot] in https://github.com/actions/runner/pull/4355
-* Bump Docker version to 29.4.0 by @Copilot in https://github.com/actions/runner/pull/4352
-* Update dotnet sdk to latest version @8.0.420 by @github-actions[bot] in https://github.com/actions/runner/pull/4356
-* Bump @typescript-eslint/parser from 8.58.1 to 8.59.0 in /src/Misc/expressionFunc/hashFiles by @dependabot[bot] in https://github.com/actions/runner/pull/4360
-* Bump System.Formats.Asn1 and System.Security.Cryptography.Pkcs by @dependabot[bot] in https://github.com/actions/runner/pull/4362
-* Add vulnerability-alerts permission by @salmanmkc in https://github.com/actions/runner/pull/4350
-* Bump @typescript-eslint/eslint-plugin from 8.58.1 to 8.59.0 in /src/Misc/expressionFunc/hashFiles by @dependabot[bot] in https://github.com/actions/runner/pull/4359
-* Bump System.ServiceProcess.ServiceController from 10.0.3 to 10.0.6 by @dependabot[bot] in https://github.com/actions/runner/pull/4358
-* Bump typescript from 6.0.2 to 6.0.3 in /src/Misc/expressionFunc/hashFiles by @dependabot[bot] in https://github.com/actions/runner/pull/4353
-* Bump Microsoft.DevTunnels.Connections from 1.3.16 to 1.3.39 by @dependabot[bot] in https://github.com/actions/runner/pull/4339
+* Canceled background steps should not impact job result by @lokesh755 in https://github.com/actions/runner/pull/4482
+* Report actions archive size in telemetry. by @TingluoHuang in https://github.com/actions/runner/pull/4509
+* Bump actions/checkout from 6 to 7 by @dependabot[bot] in https://github.com/actions/runner/pull/4511
+* Update Docker to v29.6.0 and Buildx to v0.35.0 by @github-actions[bot] in https://github.com/actions/runner/pull/4516
+* chore: update Node versions by @github-actions[bot] in https://github.com/actions/runner/pull/4519
+* chore: update Node versions by @github-actions[bot] in https://github.com/actions/runner/pull/4530
+* feat: enhance telemetry for action download resolution and failures by @TingluoHuang in https://github.com/actions/runner/pull/4536
+* Update Docker version to 29.6.1 by @AllanGuigou in https://github.com/actions/runner/pull/4539
+* feat: add self-repository action reference syntax by @nodeselector in https://github.com/actions/runner/pull/4457
+* Update dotnet sdk to latest version @8.0.422 by @github-actions[bot] in https://github.com/actions/runner/pull/4504
+* Link config.sh and installdependencies.sh in docs by @Wuodan in https://github.com/actions/runner/pull/4526
+* Add support for $GITHUB_ARTIFACTS environment files by @bdehamer in https://github.com/actions/runner/pull/4527
+* feat: expose effective cache-mode to steps via ACTIONS_CACHE_MODE by @philip-gai in https://github.com/actions/runner/pull/4538
+* Setup Job: announce when running with locked dependencies by @nodeselector in https://github.com/actions/runner/pull/4546
+* Setup Job: reword locked-dependencies log line to use lockfile language by @nodeselector in https://github.com/actions/runner/pull/4550
+* Wait for worker to finish during cancel by @TingluoHuang in https://github.com/actions/runner/pull/4553
+* do not cap migrated setting retry is exception is session conflict by @aiqiaoy in https://github.com/actions/runner/pull/4557
+* Allow checking DNS with api.gihub.com. by @TingluoHuang in https://github.com/actions/runner/pull/4547
+* Exit ephemeral runners on broker acknowledge job-not-found by @rentziass in https://github.com/actions/runner/pull/4540
+* Cleanup session files on get message or session deleted error by @nikola-jokic in https://github.com/actions/runner/pull/4551
+* Recreate session on RunnerSessionInvalid from broker by @luketomlinson in https://github.com/actions/runner/pull/4556
 
 ## New Contributors
-* @stefanpenner made their first contribution in https://github.com/actions/runner/pull/4296
+* @Wuodan made their first contribution in https://github.com/actions/runner/pull/4526
+* @bdehamer made their first contribution in https://github.com/actions/runner/pull/4527
+* @philip-gai made their first contribution in https://github.com/actions/runner/pull/4538
 
-**Full Changelog**: https://github.com/actions/runner/compare/v2.333.1...v2.334.0
+**Full Changelog**: https://github.com/actions/runner/compare/v2.335.0...v2.336.0
 
 _Note: Actions Runner follows a progressive release policy, so the latest release might not be available to your enterprise, organization, or repository yet.
 To confirm which version of the Actions Runner you should expect, please view the download instructions for your enterprise, organization, or repository.

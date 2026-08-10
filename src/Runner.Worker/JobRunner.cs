@@ -1,11 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Reflection.Emit;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -31,7 +29,6 @@ namespace GitHub.Runner.Worker
 
   public sealed partial class JobRunner : RunnerService, IJobRunner
   {
-    private const string DebuggerConnectionTelemetryPrefix = "DebuggerConnectionResult";
     private IJobServerQueue _jobServerQueue;
     private RunnerSettings _runnerSettings;
     private ITempDirectoryManager _tempDirectoryManager;
@@ -116,7 +113,6 @@ namespace GitHub.Runner.Worker
 
       IExecutionContext jobContext = null;
       CancellationTokenRegistration? runnerShutdownRegistration = null;
-      IDapDebugger dapDebugger = null;
       try
       {
         // Create the job execution context.
@@ -124,6 +120,7 @@ namespace GitHub.Runner.Worker
         jobContext.InitializeJob(message, jobRequestCancellationToken);
         Trace.Info("Starting the job execution context.");
         jobContext.Start();
+        jobContext.Debug($"Starting: {message.JobDisplayName}");
 
         // UAZO
         _runnerSettings = HostContext.GetService<IConfigurationStore>().GetSettings();
@@ -132,8 +129,6 @@ namespace GitHub.Runner.Worker
           return await CompleteJobAsync(server, jobContext, message,
             jobContext.CancellationToken.IsCancellationRequested ? TaskResult.Canceled : TaskResult.Failed);
         }
-
-        jobContext.Debug($"Starting: {message.JobDisplayName}");
 
         runnerShutdownRegistration = HostContext.RunnerShutdownToken.Register(() =>
         {
@@ -192,25 +187,6 @@ namespace GitHub.Runner.Worker
         _tempDirectoryManager = HostContext.GetService<ITempDirectoryManager>();
         _tempDirectoryManager.InitializeTempDirectory(jobContext);
 
-        // Setup the debugger
-        if (jobContext.Global.Debugger?.Enabled == true)
-        {
-          Trace.Info("Debugger enabled for this job run");
-
-          try
-          {
-            dapDebugger = HostContext.GetService<IDapDebugger>();
-            await dapDebugger.StartAsync(jobContext);
-          }
-          catch (Exception ex)
-          {
-            Trace.Error($"Failed to start DAP debugger: {ex.Message}");
-            AddDebuggerConnectionTelemetry(jobContext, $"Failed: {ex.Message}");
-            jobContext.Error("Failed to start debugger.");
-            return await CompleteJobAsync(server, jobContext, message, TaskResult.Failed);
-          }
-        }
-
 
         // Get the job extension.
         Trace.Info("Getting job extension.");
@@ -253,33 +229,6 @@ namespace GitHub.Runner.Worker
           await Task.WhenAny(_jobServerQueue.JobRecordUpdated.Task, Task.Delay(1000));
         }
 
-        // Wait for DAP debugger client connection and handshake after "Set up job"
-        // so the job page shows the setup step before we block on the debugger
-        if (dapDebugger != null)
-        {
-          try
-          {
-            await dapDebugger.WaitUntilReadyAsync();
-            AddDebuggerConnectionTelemetry(jobContext, "Connected");
-          }
-          catch (OperationCanceledException) when (jobRequestCancellationToken.IsCancellationRequested)
-          {
-            Trace.Info("Job was cancelled before debugger client connected.");
-            AddDebuggerConnectionTelemetry(jobContext, "Canceled");
-            jobContext.Error("Job was cancelled before debugger client connected.");
-            return await CompleteJobAsync(server, jobContext, message, TaskResult.Canceled);
-          }
-          catch (Exception ex)
-          {
-            Trace.Error($"DAP debugger failed to become ready: {ex.Message}");
-            AddDebuggerConnectionTelemetry(jobContext, $"Failed: {ex.Message}");
-
-            // If debugging was requested but the debugger is not available, fail the job
-            jobContext.Error("The debugger failed to start or no debugger client connected in time.");
-            return await CompleteJobAsync(server, jobContext, message, TaskResult.Failed);
-          }
-        }
-
         // Run all job steps
         Trace.Info("Run all job steps.");
         var stepsRunner = HostContext.GetService<IStepsRunner>();
@@ -288,6 +237,12 @@ namespace GitHub.Runner.Worker
           foreach (var step in jobSteps)
           {
             jobContext.JobSteps.Enqueue(step);
+          }
+
+          if (jobContext.Global.Debugger?.Enabled == true)
+          {
+            var dapDebugger = HostContext.GetService<IDapDebugger>();
+            await dapDebugger.OnJobStepsInitializedAsync(jobContext.JobSteps, jobContext.PostJobSteps);
           }
 
           await stepsRunner.RunAsync(jobContext);
@@ -318,11 +273,6 @@ namespace GitHub.Runner.Worker
         {
           runnerShutdownRegistration.Value.Dispose();
           runnerShutdownRegistration = null;
-        }
-
-        if (dapDebugger != null)
-        {
-          await dapDebugger.OnJobCompletedAsync();
         }
 
         await ShutdownQueue(throwOnFailure: false);
@@ -504,15 +454,6 @@ namespace GitHub.Runner.Worker
 
       // rethrow exceptions from all attempts.
       throw new AggregateException(exceptions);
-    }
-
-    private static void AddDebuggerConnectionTelemetry(IExecutionContext jobContext, string result)
-    {
-      jobContext.Global.JobTelemetry.Add(new JobTelemetry
-      {
-        Type = JobTelemetryType.General,
-        Message = $"{DebuggerConnectionTelemetryPrefix}: {result}"
-      });
     }
 
     private void MaskTelemetrySecrets(List<JobTelemetry> jobTelemetry)
